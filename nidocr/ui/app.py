@@ -273,6 +273,8 @@ def quality_notes(result) -> list[str]:
         notes.append("تصویر بیش از حد روشن است؛ بازتاب نور را حذف کنید.")
     if quality.glare_ratio > 0.02:
         notes.append("بازتاب نور روی کارت دیده می‌شود.")
+    if quality.rotation_degrees:
+        notes.append(f"تصویر {to_persian_digits(str(quality.rotation_degrees))} درجه چرخانده شد تا متن افقی شود.")
     if not quality.card_detected:
         notes.append("کادر کارت با اطمینان پیدا نشد؛ کل تصویر پردازش شد.")
     if quality.resolution[0] < 700:
@@ -281,6 +283,12 @@ def quality_notes(result) -> list[str]:
 
 
 # ── accuracy ─────────────────────────────────────────────────────────────────
+TEMPLATE_LABELS = {
+    "national_card_front": "کارت ملی (قدیمی) — front",
+    "national_card_back": "کارت ملی (قدیمی) — back",
+    "national_card_smart": "کارت هوشمند ملی — front",
+}
+
 DIFFICULTY_LABELS = {
     "clean": "اسکن تخت (clean)",
     "photo": "عکس با دوربین (photo)",
@@ -550,9 +558,17 @@ def sidebar():
             unsafe_allow_html=True,
         )
 
-        templates = available_templates()
-        template = st.selectbox("قالب کارت", templates, index=templates.index("national_card_front") if "national_card_front" in templates else 0)
-        st.caption("روی کارت ملی هوشمند (روی/پشت) قالب مناسب را انتخاب کنید.")
+        templates = ["auto", *available_templates()]
+        template = st.selectbox(
+            "قالب کارت",
+            templates,
+            index=0,
+            format_func=lambda name: "تشخیص خودکار" if name == "auto" else TEMPLATE_LABELS.get(name, name),
+        )
+        st.caption(
+            "«تشخیص خودکار» طرح کارت را از متن چاپ‌شده می‌شناسد "
+            "(کارت قدیمی با سریال/جنسیت یا کارت هوشمند با پایان اعتبار)."
+        )
 
         condition = st.selectbox(
             "شرایط تصویر (برای تخمین دقت)",
@@ -794,6 +810,7 @@ def main() -> None:
 * خواندن اعداد: قطعه‌بندی گلیف‌ها + طبقه‌بند k-NN فارسی + رأی‌گیری دو باینری‌سازی
 * خواندن نام‌ها: موتور Tesseract فارسی (psm 7 + حالت‌های پشتیبان) + فرهنگ نام‌ها
 * اعتبارسنجی: چک‌سام mod-11 کد ملی، تقویم جلالی، واژه‌نامهٔ نام
+* چرخش: تصحیح خودکار ۹۰/۱۸۰/۲۷۰ درجه با OSD و بازخوانی نجات‌بخش
 * دقت: اندازه‌گیری واقعی هر فیلد و کل کارت (`nidocr/accuracy.py`) + تخمین برای کارت‌های بدون حقیقت
 
 فیلدهای قابل خواندن: {", ".join(spec.label_fa for spec in FIELD_SPECS.values())}

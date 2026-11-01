@@ -132,6 +132,33 @@ def _load_template(path_str: str, mtime: float) -> TemplateLayout:
     )
 
 
+#: Printed labels that identify a card design.  A card is matched to the template
+#: whose signature it contains — the modern smart card prints «پایان اعتبار», the
+#: older plastic card prints «سریال»/«جنسیت» — which is what `template="auto"` uses.
+TEMPLATE_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "national_card_smart": ("پایان اعتبار", "اعتبار", "تاریخ انقضا"),
+    "national_card_front": ("سریال", "جنسیت"),
+}
+
+
+def detect_template(text: str, available: list[str] | None = None) -> str | None:
+    """Choose a template name from the OCR text of a card, ``None`` when unsure.
+
+    The score of a template is the number of its signature labels present in the
+    text; the winner needs at least one hit, otherwise the caller keeps its default.
+    ``available`` restricts the answer to templates that actually exist on disk.
+    """
+    haystack = (text or "").replace("\u200c", " ").replace("\u064a", "ی").replace("\u0643", "ک")
+    best: tuple[int, str] | None = None
+    for name, signatures in TEMPLATE_SIGNATURES.items():
+        if available is not None and name not in available:
+            continue
+        score = sum(1 for signature in signatures if signature in haystack)
+        if score and (best is None or score > best[0]):
+            best = (score, name)
+    return best[1] if best else None
+
+
 def load_template(name_or_path: str | Path | None = None, settings: Settings | None = None) -> TemplateLayout:
     """Load a template by name (``national_card_front``) or by file path."""
     settings = settings or get_settings()

@@ -1,0 +1,51 @@
+{
+  "name": "national_card_smart",
+  "title_fa": "کارت هوشمند ملی",
+  "title_en": "Iranian smart national card — front side",
+  "canvas": { "width": 1012, "height": 638 },
+  "notes": [
+    "The modern «کارت هوشمند ملی»: the ID photo sits on the LEFT and the six field rows on the RIGHT.",
+    "Rows, top to bottom: شماره ملی، نام، نام خانوادگی، تاریخ تولد، نام پدر، پایان اعتبار.",
+    "There is no serial number or gender on this side, so those fields stay empty for this template.",
+    "All boxes are normalised 0..1 (x, y, x1, y1) on the perspective-corrected canvas and are tightened onto the real ink by the pipeline.",
+    "Calibrated from a rectified photo of a real card (see `scripts/calibrate_template.py`)."
+  ],
+  "field_layout": {
+    "national_code": {
+      "label": [0.795, 0.250, 0.960, 0.315],
+      "value": [0.545, 0.250, 0.792, 0.318],
+      "align": "right"
+    },
+    "first_name": {
+      "label": [0.795, 0.355, 0.960, 0.413],
+      "value": [0.545, 0.353, 0.792, 0.415],
+      "align": "right"
+    },
+    "last_name": {
+      "label": [0.795, 0.462, 0.960, 0.520],
+      "value": [0.545, 0.460, 0.792, 0.522],
+      "align": "right"
+    },
+    "birth_date": {
+      "label": [0.795, 0.560, 0.960, 0.618],
+      "value": [0.545, 0.558, 0.792, 0.622],
+      "align": "right"
+    },
+    "father_name": {
+      "label": [0.795, 0.664, 0.960, 0.720],
+      "value": [0.545, 0.662, 0.792, 0.726],
+      "align": "right"
+    },
+    "expiry_date": {
+      "label": [0.795, 0.748, 0.960, 0.804],
+      "value": [0.545, 0.746, 0.792, 0.810],
+      "align": "right"
+    }
+  },
+  "decorations": {
+    "photo": [0.020, 0.150, 0.295, 0.740],
+    "emblem": [0.030, 0.770, 0.135, 0.950],
+    "title": [0.380, 0.055, 0.600, 0.160],
+    "footer": [0.720, 0.060, 0.960, 0.150]
+  }
+}

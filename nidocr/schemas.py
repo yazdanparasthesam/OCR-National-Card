@@ -90,6 +90,7 @@ class QualityReport(BaseModel):
     detection_score: float = 0.0
     detection_method: str = "unknown"
     card_area_ratio: float = 0.0
+    rotation_degrees: int = 0
     warnings: list[str] = Field(default_factory=list)
 
 

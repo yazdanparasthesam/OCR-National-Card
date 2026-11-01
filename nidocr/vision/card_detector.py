@@ -238,8 +238,12 @@ def warp_card(
     (tl, tr, br, bl) = quad
     quad_width = max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl))
     quad_height = max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr))
-    if quad_height > quad_width:  # portrait photo of a landscape card
-        quad = np.roll(quad, 1, axis=0)[::-1]
+    if quad_height > quad_width:
+        # portrait photo of a landscape card: shift the corners by one place, which
+        # is a *rotation* of the quadrilateral.  (Reversing them as well would mirror
+        # the canvas — mirrored text is unreadable no matter how it is turned, and the
+        # difference is invisible to the eye in a thumbnail.)
+        quad = np.roll(quad, 1, axis=0)
     target_width, target_height = size
     destination = np.array(
         [[0, 0], [target_width - 1, 0], [target_width - 1, target_height - 1], [0, target_height - 1]],

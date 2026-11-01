@@ -239,6 +239,35 @@ def validate_birth_date(raw: str) -> FieldOutcome:
     return FieldOutcome(value, True, repaired, 1.0, ["تاریخ معتبر است"] if not repaired else messages)
 
 
+def validate_expiry_date(raw: str) -> FieldOutcome:
+    """Normalise the smart card's «پایان اعتبار» date to ``YYYY/MM/DD``.
+
+    Same Jalali rules as the birth date, except for the year: an expiry date is in
+    the *future* while a birth date is in the past, so a two-digit year is rebuilt
+    as 14xx and the ``birth_year_range`` setting is not applied.
+    """
+    numbers = parse_date_numbers(raw)
+    if len(numbers) < 3:
+        return FieldOutcome("", False, False, 0.0, ["تاریخ پایان اعتبار خوانده نشد"])
+    year, month, day = numbers[0], numbers[1], numbers[2]
+    messages: list[str] = []
+    repaired = False
+    if year < 100:  # 06/03/14 → 1406/03/14
+        year += 1400
+        repaired = True
+        messages.append("سال دورقمی بازسازی شد")
+    if not (1 <= month <= 12) and 1 <= day <= 12:
+        month, day = day, month
+        repaired = True
+        messages.append("جای ماه و روز اصلاح شد")
+    value = f"{year:04d}/{month:02d}/{day:02d}"
+    if not is_valid_jalali_date(year, month, day):
+        return FieldOutcome(value, False, repaired, 0.2, ["تاریخ در تقویم جلالی معتبر نیست"])
+    if not 1390 <= year <= 1450:
+        return FieldOutcome(value, False, repaired, 0.4, ["سال پایان اعتبار منطقی نیست"])
+    return FieldOutcome(value, True, repaired, 1.0, ["تاریخ معتبر است"] if not repaired else messages)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # serial number (شماره سریال)
 # ─────────────────────────────────────────────────────────────────────────────

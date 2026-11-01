@@ -21,6 +21,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -376,6 +377,66 @@ class TesseractEngine:
     def read_page(self, image: np.ndarray, *, psm: int = 6, variant: str = "") -> OCRResult:
         """OCR a whole card (used to locate the printed field labels)."""
         return self.read(image, psm=psm, whitelist=None, variant=variant)
+
+    def osd(self, image: np.ndarray, *, timeout: float = 25.0) -> dict[str, Any]:
+        """Detect page orientation and script with Tesseract's OSD (``--psm 0``, ``-l osd``).
+
+        Returns ``{"rotate": 0|90|180|270, "confidence": float, "script": str,
+        "script_confidence": float}`` where ``rotate`` is the **clockwise** rotation
+        that makes the text upright.  Everything degrades to zeros when the ``osd``
+        model is missing or the call fails, so the caller can treat «0, unsure» and
+        «no OSD» the same way and decide on its own evidence instead.
+        """
+        empty = {"rotate": 0, "confidence": 0.0, "script": "", "script_confidence": 0.0}
+        if not self.binary or image is None or getattr(image, "size", 0) == 0:
+            return empty
+        if "osd" not in self.available_languages():
+            return empty
+        if image.ndim == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        ok, buffer = cv2.imencode(".bmp", image)
+        if not ok:  # pragma: no cover - defensive
+            return empty
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".bmp", delete=False) as handle:
+                handle.write(buffer.tobytes())
+                temporary_path = handle.name
+            completed = subprocess.run(  # noqa: S603 - fixed binary path
+                [self.binary, temporary_path, "-", "-l", "osd", "--psm", "0"],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=self._env,
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, OSError):  # pragma: no cover - environment
+            return empty
+        finally:
+            if temporary_path:
+                Path(temporary_path).unlink(missing_ok=True)
+
+        fields: dict[str, str] = {}
+        for line in (completed.stdout or "").splitlines():
+            key, _, value = line.partition(":")
+            fields[key.strip().lower()] = value.strip()
+        try:
+            rotate = int(fields.get("rotate", "0"))
+            confidence = float(fields.get("orientation confidence", "0") or 0)
+        except ValueError:  # pragma: no cover - defensive
+            return empty
+        if rotate not in (0, 90, 180, 270):
+            return empty
+        try:
+            script_confidence = float(fields.get("script confidence", "0") or 0)
+        except ValueError:
+            script_confidence = 0.0
+        return {
+            "rotate": rotate,
+            "confidence": confidence,
+            "script": fields.get("script", ""),
+            "script_confidence": script_confidence,
+        }
 
     def version(self) -> str:
         """Version banner of the binary (``unknown`` when it cannot be queried)."""

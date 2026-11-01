@@ -5,15 +5,15 @@
 
 - cards: **30**
 - difficulty: `clean`
-- field exact match: **92.86%**
-- field character accuracy: **97.84%**
-- fully correct cards: **92.86%**
-- mean latency: 1193 ms / card
+- field exact match: **92.38%**
+- field character accuracy: **97.68%**
+- fully correct cards: **92.38%**
+- mean latency: 1281 ms / card
 
 | field | exact match | char accuracy | mean confidence | validator pass |
 |---|---|---|---|---|
 | `national_code` | 100.0% | 100.0% | 97.5 | 100.0% |
-| `last_name` | 96.7% | 98.0% | 80.8 | 100.0% |
+| `last_name` | 93.3% | 96.9% | 80.8 | 100.0% |
 | `first_name` | 90.0% | 94.2% | 78.5 | 100.0% |
 | `father_name` | 90.0% | 97.8% | 82.8 | 100.0% |
 | `birth_date` | 80.0% | 96.3% | 89.0 | 93.3% |
@@ -35,6 +35,7 @@
 | card_021.jpg | `first_name` | شیدا | شبد | 58 |
 | card_021.jpg | `birth_date` | 1331/11/11 | 1331/01/01 | 54 |
 | card_023.jpg | `birth_date` | 1341/11/04 | 1349/11/04 | 95 |
+| card_025.jpg | `last_name` | شیرازی | شیرازی و | 68 |
 | card_025.jpg | `first_name` | هستی | پدرام | 89 |
 | card_026.jpg | `birth_date` | 1351/10/30 | 1151/10/150 | 94 |
 | card_027.jpg | `last_name` | شریفی | شریفی اه | 44 |

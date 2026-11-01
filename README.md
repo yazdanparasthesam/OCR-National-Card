@@ -62,14 +62,14 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
-| `national_code` | **100.0 %** | 100.0 % | 90.0 % | 92.7 % |
-| `last_name` | **96.7 %** | 98.0 % | 90.0 % | 91.8 % |
-| `first_name` | 90.0 % | 94.2 % | 80.0 % | 87.5 % |
-| `father_name` | 90.0 % | 97.8 % | 76.7 % | 82.7 % |
-| `birth_date` | 80.0 % | 96.3 % | 56.7 % | 86.3 % |
-| `serial_number` | 93.3 % | 98.6 % | 53.3 % | 73.9 % |
-| `gender` | **100.0 %** | 100.0 % | 80.0 % | 80.0 % |
-| **overall** | **92.9 %** | **97.8 %** | **75.2 %** | **85.0 %** |
+| `national_code` | **100.0 %** | 100.0 % | 86.7 % | 91.0 % |
+| `last_name` | **93.3 %** | 96.9 % | 86.7 % | 88.5 % |
+| `first_name` | 90.0 % | 94.2 % | 86.7 % | 92.3 % |
+| `father_name` | 90.0 % | 97.8 % | 80.0 % | 83.6 % |
+| `birth_date` | 80.0 % | 96.3 % | 73.3 % | 85.3 % |
+| `serial_number` | 93.3 % | 98.6 % | 66.7 % | 75.6 % |
+| `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
+| **overall** | **92.4 %** | **97.7 %** | **79.5 %** | **84.7 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -82,10 +82,10 @@ How to read it:
 * **national code and gender are effectively exact**: the mod-11 checksum and the
   two-word vocabulary make them self-correcting.
 * **photographed cards are harder** (down to 0.62× resolution, blur σ≈0.9, JPEG 45–70
-  and glare in the benchmark): 75 % of cards come out perfect, 85 % of characters
-  right. Low-res dates and serials are where it hurts — see
+  and glare in the benchmark): 79 % of cards come out perfect, 85 % of characters
+  right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
-* Latency: **1.1–1.5 s per card** on CPU (single Tesseract binary, 8–14 subprocess
+* Latency: **1.3–1.7 s per card** on CPU (single Tesseract binary, 8–14 subprocess
   calls per card; the UI and API reuse a warm process-wide pipeline).
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
@@ -113,8 +113,37 @@ The Streamlit app shows accuracy in two honest flavours:
 | **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
-Nothing is inflated: the measured panel reports 92.9 % / 97.8 % on clean renders and
-75.2 % / 85.0 % on photo-style cards — the numbers in the table above.
+Nothing is inflated: the measured panel reports 92.4 % / 97.7 % on clean renders and
+79.5 % / 84.7 % on photo-style cards — the numbers in the table above.
+
+### Rotated and mirrored photos
+
+A phone photo is very often not upright: EXIF orientation, the camera held sideways, or
+a card lying upside down. Two things make that work:
+
+* **the warp never mirrors.** A portrait quad is turned into the canvas with a cyclic
+  shift of its corners (a rotation); reversing them instead produces a *mirrored* card,
+  which no OCR can rescue. This was a real bug: sideways cards scored 0/7.
+* **the canvas is straightened with OSD.** One cheap Tesseract OSD call names the
+  clockwise correction (`Rotate: 90/180/270`), the canvas is turned, and the exact
+  angle is reported in `quality.rotation_degrees` and in the Persian warnings. When
+  the reading still looks broken, `nidocr/vision/orient.py` probes all four
+  orientations with a one-pass OCR score and re-reads once if another one is better.
+
+Small photos are supersampled before reading (a 470-px card stretched to 1012 px loses
+exactly the stroke information digit segmentation needs), with a second read at full
+magnification when the first one comes back weak.
+
+### Two card designs
+
+| template | design | fields |
+|---|---|---|
+| `national_card_front` | older plastic card (photo right) | شماره ملی، نام، نام خانوادگی، نام پدر، تاریخ تولد، شماره سریال، جنسیت |
+| `national_card_smart` | modern «کارت هوشمند ملی» (photo left) | شماره ملی، نام، نام خانوادگی، تاریخ تولد، نام پدر، **پایان اعتبار** |
+
+`template="auto"` picks the design from the position of the ID photo (no OCR, no extra
+cost); an unknown template name falls back to the configured default instead of
+raising, so a stale client can never break a page.
 
 ---
 
@@ -407,7 +436,7 @@ nidocr/
   api/            FastAPI app + one router per resource (health, card, fields, templates, validate)
   ui/app.py       self-contained RTL Streamlit UI
   vision/         card_detector, enhance (flatten/CLAHE/sharpen), binarize (Sauvola/Otsu),
-                  layout (templates, ROI refinement), annotate
+                  layout (templates, ROI refinement), orient (OSD rotation), annotate
   ocr/            tesseract_engine (subprocess + cache), digit_reader (glyph segmentation),
                   digit_classifier (k-NN), label_anchor, text (Persian normalisation)
   fields/         definitions (7 fields), validators (mod-11, Jalali, names), lexicon
@@ -415,12 +444,12 @@ nidocr/
   pipeline.py     the orchestrator: prepare → detect → read → validate → rank
   accuracy.py     measured (per field + overall) and estimated accuracy, shared by UI/CLI/bench
   cli.py, schemas.py, config.py, metrics.py, errors.py, image_io.py
-  templates/      national_card_front.json, national_card_back.json
+  templates/      national_card_front.json, national_card_smart.json, national_card_back.json
 data/lexicon/     first_names.txt, last_names.txt
 models/           tessdata/ + persian_digits.npz
 scripts/          benchmark, generate_synthetic_cards, train_digit_model,
                   build_name_lexicon, calibrate_template, fetch_models
-tests/            85 tests (unit + API + end-to-end on a rendered card + accuracy)
+tests/            99 tests (unit + API + end-to-end on a rendered card + accuracy)
 reports/          measured benchmark + digit-model reports
 ```
 
@@ -429,7 +458,7 @@ reports/          measured benchmark + digit-model reports
 ## Tests
 
 ```bash
-pytest                     # 85 tests, ~21 s
+pytest                     # 99 tests, ~31 s
 ruff check .               # style (optional)
 ```
 

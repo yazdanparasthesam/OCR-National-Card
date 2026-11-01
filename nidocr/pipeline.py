@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
 from nidocr.config import Settings, get_settings
-from nidocr.errors import NIDOCRError
+from nidocr.errors import NIDOCRError, TemplateNotFoundError
 from nidocr.fields.definitions import DIGIT_WHITELIST, FIELD_ORDER, FIELD_SPECS, FieldSpec, resolve_fields
 from nidocr.fields.validators import FieldOutcome
 from nidocr.image_io import load_image
@@ -42,14 +42,26 @@ from nidocr.vision.enhance import (
     crop_with_padding,
     field_variants,
     resize_to_max_side,
+    unsharp,
+    upscale,
 )
 from nidocr.vision.layout import (
     Rect,
     TemplateLayout,
+    available_templates,
     load_template,
     rect_ink,
     refine_rect,
 )
+from nidocr.vision.orient import best_rotation, looks_rotated, rotate, upright
+
+#: How much darker one candidate template's photo region must be before ``auto``
+#: trusts it: below this the two designs are indistinguishable and the default wins.
+TEMPLATE_PHOTO_MARGIN = 0.06
+
+#: A card narrower than this (in source pixels) is supersampled before reading:
+#: measured on phone photos, 700 px is where glyph segmentation starts to merge digits.
+SMALL_CARD_PX = 700
 
 MAX_CANDIDATES_KEPT = 6
 GLYPH_KINDS = {"digits", "date", "serial"}
@@ -72,6 +84,38 @@ class PreparedCard:
     quality: QualityReport
     anchors: dict[str, tuple[Rect, Anchor]] = field(default_factory=dict)
     prep_ms: float = 0.0
+    rotation: int = 0
+    osd_confidence: float = 0.0
+    scale: float = 1.0
+    upscale_boost: float = 1.0
+
+    @property
+    def roi_source(self) -> np.ndarray:
+        """Whole-card image the field ROIs are cut from.
+
+        Soft photos (a small or blurred source) read better on the *raw* grey canvas:
+        the background flattening plus CLAHE that :attr:`enhanced` applies amplifies
+        the guilloche pattern of the card into speckle, and Otsu inside
+        :func:`field_variants` then works on that noise.  A crisp scan is the other way
+        round — there the flattened image removes the printed background and gives
+        Tesseract clean strokes.  The switch therefore follows the measured sharpness
+        and the supersampling factor instead of being a fixed preference.
+        """
+        if self.scale > 1.0 or self.quality.sharpness < 120:
+            return self.gray
+        return self.enhanced
+
+    @property
+    def text_source(self) -> np.ndarray:
+        """Canvas used for the *line* OCR of the name fields.
+
+        Names go through Tesseract's line segmenter, which is sensitive to the
+        background: on a small source photo (supersampled canvas) the raw grey keeps
+        the strokes intact, while on a normal scan the flattened image is better.
+        Numeric fields use :attr:`roi_source` instead — digits are segmented by our
+        own glyph reader, which prefers the other side of that trade-off.
+        """
+        return self.gray if self.scale > 1.0 else self.enhanced
 
     @property
     def canvas(self) -> tuple[int, int]:
@@ -124,12 +168,42 @@ class NationalCardOCR:
         started = time.perf_counter()
         image = load_image(source)
         image = resize_to_max_side(image, self.settings.max_image_side)
-        layout = self.template(template)
-
+        requested = str(template or self.settings.default_template)
         detection = detect_card(image, self.settings)
-        canvas = (layout.canvas[0], layout.canvas[1])
+        # both card designs share the canonical canvas, so the warp can happen before
+        # the template is known — which "auto" needs, because the design is recognised
+        # from the *upright* text and the rotation is only fixed after the warp.
+        canvas = (self.settings.canonical_width, self.settings.canonical_height)
         color = warp_card(image, detection.quad, canvas, self.settings)
+        scale = _supersample_factor(detection.quad, canvas[0])
+        if scale > 1.0:
+            # a small photo (a card of ~500 px stretched to 1012 px) arrives soft, and
+            # soft Persian digits touch each other, which breaks glyph segmentation.
+            # One cubic supersample + a light unsharp is what makes those cards read.
+            color = upscale(color, scale)
+            color = unsharp(color, amount=0.6, radius=1.1)
+        # the warp removes the perspective, not the rotation: a sideways or
+        # upside-down card still has rotated text inside the canvas, so ask OSD
+        # (one cheap call) and turn the canvas upright first.
+        color, rotation, osd_confidence = upright(color, self.engine)
         variants = card_variants(color)
+        want_anchors = self.settings.use_label_anchors if use_anchors is None else use_anchors
+        anchors: dict[str, tuple[Rect, Anchor]] = {}
+        auto = requested.lower() == "auto"
+        if want_anchors:
+            try:
+                anchors = detect_anchors(
+                    self.engine,
+                    {"enhanced": variants["enhanced"], "binary": variants["binary"]},
+                    settings=self.settings,
+                    canvas=(variants["gray"].shape[1], variants["gray"].shape[0]),
+                    binary=variants["binary"],
+                )
+            except NIDOCRError:
+                anchors = {}
+        layout = (
+            self.template(self._detect_template(variants)) if auto else self._resolve_layout(requested)
+        )
         gray_for_ocr = variants["enhanced"]
 
         gray = variants["gray"]
@@ -144,6 +218,7 @@ class NationalCardOCR:
             detection_score=detection.score,
             detection_method=detection.method,
             card_area_ratio=detection.area_ratio,
+            rotation_degrees=rotation,
             warnings=list(quality_dict["warnings"]),
         )
 
@@ -156,20 +231,15 @@ class NationalCardOCR:
             detection=detection,
             layout=layout,
             quality=quality,
+            rotation=rotation,
+            osd_confidence=osd_confidence,
+            scale=scale,
         )
+        if rotation:
+            prepared.quality.warnings.append(f"تصویر {rotation} درجه چرخانده شد تا متن افقی شود")
 
-        want_anchors = self.settings.use_label_anchors if use_anchors is None else use_anchors
-        if want_anchors:
-            try:
-                prepared.anchors = detect_anchors(
-                    self.engine,
-                    {"enhanced": gray_for_ocr, "binary": variants["binary"]},
-                    settings=self.settings,
-                    canvas=canvas,
-                    binary=variants["binary"],
-                )
-            except NIDOCRError:
-                prepared.anchors = {}
+        if want_anchors and anchors:
+            prepared.anchors = anchors
         prepared.prep_ms = round((time.perf_counter() - started) * 1000, 1)
         return prepared
 
@@ -187,7 +257,43 @@ class NationalCardOCR:
         started = time.perf_counter()
         prepared = self.prepare(source, template=template, use_anchors=use_anchors)
         specs = resolve_fields(fields)
+        result = self._build_result(prepared, specs, debug=debug, started=started)
 
+        # rescue path: OSD found the card upright (or said nothing), yet the reading
+        # is garbage — the classic signature of a sideways/upside-down photo. Probe
+        # the four orientations and re-read once if another one clearly reads better.
+        if prepared.rotation == 0 and prepared.detection.found and looks_rotated(result):
+            alternative = self._rescue(prepared, specs, current=result, started=started, debug=debug)
+            if alternative is not None:
+                result = alternative
+
+        # rescue path 2: a very small photo is read from a supersampled canvas, where the
+        # ROI magnification was reduced on purpose.  If that still yields almost nothing,
+        # one more read with the full magnification often recovers the digits (measured on
+        # a 470-px card photo: national code and surname come out right).
+        weak = result.mean_confidence < 50.0 or result.validated_fields <= 2
+        if prepared.scale > 1.0 and weak and prepared.detection.found:
+            boosted = self._build_result(
+                replace(prepared, upscale_boost=prepared.scale**0.5),
+                specs,
+                debug=debug,
+                started=started,
+            )
+            current_rank = (result.validated_fields, result.total_fields, result.mean_confidence)
+            boosted_rank = (boosted.validated_fields, boosted.total_fields, boosted.mean_confidence)
+            if boosted_rank > current_rank:
+                result = boosted
+        return result
+
+    def _build_result(
+        self,
+        prepared: PreparedCard,
+        specs: list[FieldSpec],
+        *,
+        debug: bool,
+        started: float,
+    ) -> CardResult:
+        """Read ``specs`` from a prepared card and assemble the :class:`CardResult`."""
         results: dict[str, FieldResult] = {}
         for spec in specs:
             results[spec.key] = self._read_field(prepared, spec, debug=debug)
@@ -323,7 +429,17 @@ class NationalCardOCR:
         """
         texts: list[str] = []
         for line in ocr.lines:
-            texts.extend([line.text_rtl, line.text_ltr])
+            texts.append(line.text_rtl)
+            # ``text_ltr`` is the same line in visual order, i.e. a *reversed* string
+            # for Persian.  On a blurry photo it frequently out-scores the correct
+            # reading, so it is offered only when the lexicon prefers it.
+            if (
+                line.text_ltr
+                and line.text_ltr != line.text_rtl
+                and self._lexicon_knows(line.text_ltr, spec)
+                and not self._lexicon_knows(line.text_rtl, spec)
+            ):
+                texts.append(line.text_ltr)
         if not texts and ocr.text:
             texts.append(ocr.text)
 
@@ -341,13 +457,28 @@ class NationalCardOCR:
                 collected.append(numeric)
         if spec.kind == "text":
             # Tesseract occasionally emits a word in visual order ("یمساق" for
-            # "قاسمی"); the lexicon-aware ranking rejects the reversed string
-            # whenever the forward one is a real name.
+            # "قاسمی").  The reversed string is only worth offering when the lexicon
+            # actually recognises it *and* not the forward reading — otherwise it is
+            # noise that can outrank a correct name on a blurry photo.
             for value in list(collected):
                 reversed_value = value[::-1]
-                if reversed_value and reversed_value not in collected:
+                if not reversed_value or reversed_value in collected:
+                    continue
+                if self._lexicon_knows(reversed_value, spec) and not self._lexicon_knows(value, spec):
                     collected.append(reversed_value)
         return collected[:MAX_CANDIDATES_KEPT]
+
+    def _lexicon_knows(self, value: str, spec: FieldSpec) -> bool:
+        """Is ``value`` a known name for this field's kind (never raises)?"""
+        if not self.settings.use_name_lexicon:
+            return False
+        try:
+            from nidocr.fields.lexicon import get_lexicon
+
+            kind = "last" if spec.key == "last_name" else "first"
+            return get_lexicon(self.settings.lexicon_dir).contains(value, kind)
+        except Exception:  # pragma: no cover - the lexicon is optional
+            return False
 
     def _read_glyph_candidates(
         self,
@@ -360,13 +491,14 @@ class NationalCardOCR:
         best: tuple[float, Candidate, FieldOutcome, Rect, float] | None,
         *,
         second_opinion: bool = False,
+        upscale_factor: float | None = None,
     ) -> tuple[float, Candidate, FieldOutcome, Rect, float] | None:
         """Run the glyph reader and rank its string plus every alternative."""
         reading = read_digit_glyphs(
             self.engine,
             roi_gray,
             whitelist=whitelist,
-            upscale_factor=self.settings.upscale,
+            upscale_factor=upscale_factor or float(self.settings.upscale),
             separator="/" if spec.kind == "date" else None,
             expected_digits=spec.digits_count,
             second_opinion=second_opinion,
@@ -476,6 +608,127 @@ class NationalCardOCR:
             score -= 1.5
         return round(score, 4)
 
+    def _reoriented(self, prepared: PreparedCard, angle: int) -> PreparedCard:
+        """Same prepared card, rotated ``angle`` degrees clockwise, with fresh variants.
+
+        Everything derived from pixels is rebuilt (gray/enhanced/binary and the label
+        anchors); the detection, layout and quality report are kept, and the quality
+        report records the rotation so the API and the UI can explain what happened.
+        """
+        color = rotate(prepared.color, angle)
+        variants = card_variants(color)
+        quality = prepared.quality.model_copy(update={"rotation_degrees": angle})
+        quality.warnings = [item for item in quality.warnings if "چرخانده شد" not in item]
+        quality.warnings.append(f"تصویر {angle} درجه چرخانده شد تا متن افقی شود")
+        card = replace(
+            prepared,
+            color=color,
+            gray=variants["gray"],
+            enhanced=variants["enhanced"],
+            binary=variants["binary"],
+            quality=quality,
+            rotation=angle,
+            anchors={},
+        )
+        if prepared.anchors:
+            try:
+                card.anchors = detect_anchors(
+                    self.engine,
+                    {"enhanced": card.enhanced, "binary": card.binary},
+                    settings=self.settings,
+                    canvas=card.canvas,
+                    binary=card.binary,
+                )
+            except NIDOCRError:
+                card.anchors = {}
+        return card
+
+    def _rescue(
+        self,
+        prepared: PreparedCard,
+        specs: list[FieldSpec],
+        *,
+        current: CardResult,
+        started: float,
+        debug: bool,
+    ) -> CardResult | None:
+        """Try the best other orientation and keep it only if it reads *better*.
+
+        «Better» is compared on ``(validated fields, found fields, mean confidence)``
+        so a rotated guess that merely produces more text cannot win over a reading
+        that actually passed the validators.  Returns ``None`` when the probe found
+        no convincing alternative, which keeps the extra cost bounded (one probe per
+        orientation, one extra read at most).
+        """
+        angle, _scores = best_rotation(prepared.color, self.engine)
+        if not angle:
+            return None
+        candidate = self._build_result(
+            self._reoriented(prepared, angle), specs, debug=debug, started=started
+        )
+        current_rank = (current.validated_fields, current.total_fields, current.mean_confidence)
+        candidate_rank = (candidate.validated_fields, candidate.total_fields, candidate.mean_confidence)
+        if candidate_rank <= current_rank:
+            return None
+        candidate.warnings.append(f"کارت با چرخش {angle} درجه بهتر خوانده شد")
+        return candidate
+
+    def _resolve_layout(self, requested: str):
+        """Load the requested template, falling back to the default for a bad name.
+
+        A stale client (or a typo in a query parameter) must never turn into a red
+        traceback in the UI; the API still reports the unknown name through
+        ``GET /templates`` where a caller can act on it.
+        """
+        try:
+            return self.template(requested)
+        except TemplateNotFoundError:
+            return self.template(self.settings.default_template)
+
+    def _detect_template(self, variants: dict[str, np.ndarray]) -> str:
+        """Pick the card design from *where the ID photo sits* — no OCR involved.
+
+        The two designs are mirrored in layout: the smart card prints the photo on
+        the left and its six rows on the right, the older card the other way round.
+        So each candidate template scores the darkness of its own ``decorations.photo``
+        box on the warped canvas, and the darkest photo region wins.  This is
+        deterministic, costs no OCR call, and — unlike label matching, which needs a
+        good full-page pass — works on blurry photos as well as on rendered cards.
+        Falls back to the configured default when the two regions are equally dark.
+        """
+        default = self.settings.default_template
+        gray = variants.get("gray")
+        if gray is None:  # pragma: no cover - defensive
+            return default
+        height, width = gray.shape[:2]
+        scores: dict[str, float] = {}
+        for name in available_templates(self.settings):
+            layout = self.template(name)
+            box = (layout.raw.get("decorations") or {}).get("photo")
+            if not box:
+                continue
+            x0, y0, x1, y1 = layout._to_pixels(box, width, height)
+            region = gray[y0:y1, x0:x1]
+            if region.size == 0:
+                continue
+            scores[name] = float(255.0 - float(region.mean())) / 255.0
+        if not scores:
+            return default
+        best_name = max(scores, key=scores.get)
+        other = max((value for name, value in scores.items() if name != best_name), default=0.0)
+        if scores[best_name] - other < TEMPLATE_PHOTO_MARGIN:
+            return default
+        return best_name
+
+    def _field_upscale(self, prepared: PreparedCard) -> float:
+        """ROI upscale that keeps the *total* magnification at ``settings.upscale``.
+
+        When the canvas was already supersampled (small photo) the ROI needs less
+        enlargement, otherwise the glyphs become so large that Tesseract's line
+        segmenter gives up on them.
+        """
+        return max(1.5, float(self.settings.upscale) / max(prepared.scale, 1.0)) * prepared.upscale_boost
+
     def _read_field(self, prepared: PreparedCard, spec: FieldSpec, *, debug: bool = False) -> FieldResult:
         """OCR one field: label anchor first, then the template box, then vote."""
         width, height = prepared.canvas
@@ -509,14 +762,22 @@ class NationalCardOCR:
                 continue
             # numeric fields get generous padding so edge glyphs are never clipped
             pad_ratio = 0.18 if spec.kind in GLYPH_KINDS else 0.11
-            roi_gray = crop_with_padding(prepared.enhanced, refined, pad_ratio=pad_ratio)
+            source = prepared.roi_source if spec.kind in GLYPH_KINDS else prepared.text_source
+            roi_gray = crop_with_padding(source, refined, pad_ratio=pad_ratio)
             if roi_gray.size == 0:
                 continue
 
             # 1) numeric fields: glyph-by-glyph reader (far more accurate for digits)
             if spec.kind in GLYPH_KINDS and whitelist:
                 best = self._read_glyph_candidates(
-                    roi_gray, spec, whitelist, source_name, refined, candidates, best
+                    roi_gray,
+                    spec,
+                    whitelist,
+                    source_name,
+                    refined,
+                    candidates,
+                    best,
+                    upscale_factor=self._field_upscale(prepared),
                 )
                 if best is not None and best[2].validated and best[2].score >= 0.99:
                     break  # validated by a checksum/calendar rule: no need for more passes
@@ -524,7 +785,7 @@ class NationalCardOCR:
             # 2) whole-line passes with several preprocessing variants
             variants = field_variants(
                 roi_gray,
-                upscale_factor=self.settings.upscale,
+                upscale_factor=self._field_upscale(prepared),
                 passes=self.settings.passes,
             )
             best = self._collect_text_candidates(
@@ -549,7 +810,7 @@ class NationalCardOCR:
                 refined = self._refine(prepared.binary, rect, allow_columns=True)
                 if rect_ink(prepared.binary, refined) < 0.003:
                     continue
-                roi_gray = crop_with_padding(prepared.enhanced, refined, pad_ratio=0.18)
+                roi_gray = crop_with_padding(prepared.roi_source, refined, pad_ratio=0.18)
                 if roi_gray.size == 0:
                     continue
                 before = best[0] if best is not None else None
@@ -562,6 +823,7 @@ class NationalCardOCR:
                     candidates,
                     best,
                     second_opinion=True,
+                    upscale_factor=self._field_upscale(prepared),
                 )
                 if before is not None and best is not None and best[0] == before:
                     continue
@@ -626,6 +888,43 @@ def get_ocr(settings: Settings | None = None) -> NationalCardOCR:
     if _ocr is None or settings is not None:
         _ocr = NationalCardOCR(settings)
     return _ocr
+
+
+def _similarity(left: str, right: str) -> float:
+    """Similarity of two short strings, ignoring spaces/ZWNJ (0..1)."""
+    from difflib import SequenceMatcher
+
+    def clean(value: str) -> str:
+        """Strip spaces, ZWNJ and punctuation so only letters remain."""
+        return "".join(ch for ch in (value or "") if ch.isalpha())
+
+    a, b = clean(left), clean(right)
+    if not a or not b:
+        return 0.0
+    return SequenceMatcher(None, a, b).ratio()
+
+
+def _supersample_factor(quad, canvas_width: int) -> float:
+    """How much to enlarge the canvas so the card keeps the resolution it needs.
+
+    Uses the *long* side of the detected quad: a 1012×638 canvas made from a 640-px
+    card is fine, one made from a 460-px card is not.  Bounded to 2× so the extra
+    cost stays small.
+    """
+    if quad is None:
+        return 1.0
+    points = np.asarray(quad, dtype=np.float32)
+    if points.shape != (4, 2):  # pragma: no cover - defensive
+        return 1.0
+    longest = float(max(np.linalg.norm(points[i] - points[(i + 1) % 4]) for i in range(4)))
+    if longest <= 0:
+        return 1.0
+    factor = canvas_width / longest
+    if longest >= canvas_width:
+        return 1.0
+    if longest >= SMALL_CARD_PX:
+        return 1.0 if factor < 1.3 else 1.5
+    return 2.0
 
 
 def reset_ocr() -> None:
