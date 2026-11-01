@@ -35,6 +35,9 @@ Rect = tuple[int, int, int, int]
 
 @dataclass
 class FieldGeometry:
+    """Boxes of one field inside a template: the printed label box and the value box
+    (normalised 0..1 so the template is resolution independent).
+    """
     key: str
     label_box: tuple[float, float, float, float]
     value_box: tuple[float, float, float, float]
@@ -43,6 +46,9 @@ class FieldGeometry:
 
 @dataclass
 class TemplateLayout:
+    """A parsed card template: title, canvas size and the geometry of every field.
+    Provides the pixel boxes the pipeline uses and the normalised form for export.
+    """
     name: str
     title_fa: str
     title_en: str
@@ -53,6 +59,7 @@ class TemplateLayout:
 
     # ── geometry helpers ─────────────────────────────────────────────
     def _to_pixels(self, box, width: int, height: int) -> Rect:
+        """Convert a normalised box to pixel coordinates, clamped to the canvas."""
         x0 = int(round(min(box[0], box[2]) * width))
         y0 = int(round(min(box[1], box[3]) * height))
         x1 = int(round(max(box[0], box[2]) * width))
@@ -62,21 +69,25 @@ class TemplateLayout:
         return x0, y0, x1, y1
 
     def value_rect(self, key: str, width: int, height: int) -> Rect | None:
+        """Pixel box that holds the printed value of a field (``None`` when undefined)."""
         geometry = self.field_layout.get(key)
         if geometry is None:
             return None
         return self._to_pixels(geometry.value_box, width, height)
 
     def label_rect(self, key: str, width: int, height: int) -> Rect | None:
+        """Pixel box that holds the printed label of a field (used for anchor sanity checks)."""
         geometry = self.field_layout.get(key)
         if geometry is None:
             return None
         return self._to_pixels(geometry.label_box, width, height)
 
     def keys(self) -> list[str]:
+        """Field keys defined by this template, in file order."""
         return list(self.field_layout)
 
     def normalised(self, rect: Rect, width: int, height: int) -> dict[str, float]:
+        """The template back as a JSON-ready dict (0..1 boxes)."""
         x0, y0, x1, y1 = rect
         return {
             "x": round(x0 / width, 4),
@@ -92,6 +103,7 @@ class TemplateLayout:
 
 @lru_cache(maxsize=8)
 def _load_template(path_str: str, mtime: float) -> TemplateLayout:
+    """Parse and cache one template JSON (cache key includes the file mtime)."""
     path = Path(path_str)
     data = json.loads(path.read_text(encoding="utf-8"))
     canvas = data.get("canvas", {})
@@ -133,6 +145,7 @@ def load_template(name_or_path: str | Path | None = None, settings: Settings | N
 
 
 def available_templates(settings: Settings | None = None) -> list[str]:
+    """Names of the templates found in ``template_dir`` (without the ``.json``)."""
     settings = settings or get_settings()
     directory = Path(settings.template_dir)
     if not directory.is_dir():
@@ -292,6 +305,7 @@ def value_rect_from_label(
 
 
 def rect_ink(binary: np.ndarray, rect: Rect) -> float:
+    """Fraction of ink pixels inside a box — the «is there anything to read here?» test."""
     height, width = binary.shape[:2]
     x0, y0, x1, y1 = rect
     roi = binary[max(0, y0) : min(height, y1), max(0, x0) : min(width, x1)]
@@ -301,5 +315,6 @@ def rect_ink(binary: np.ndarray, rect: Rect) -> float:
 
 
 def draw_rect(image: np.ndarray, rect: Rect, color, thickness: int = 2) -> None:
+    """Draw one rectangle on a colour canvas (debug/montage helper)."""
     x0, y0, x1, y1 = rect
     cv2.rectangle(image, (x0, y0), (x1, y1), color, thickness)

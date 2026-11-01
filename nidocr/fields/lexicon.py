@@ -93,6 +93,10 @@ class NameLexicon:
     """Fuzzy matcher over a list of Persian names."""
 
     def __init__(self, first_names: list[str] | None = None, last_names: list[str] | None = None) -> None:
+        """Build an in-memory matcher from two name lists (first names, surnames).
+        Indexes a de-duplicated, look-alike folded key set plus first-letter buckets so
+        a lookup scans a few hundred names instead of the whole list.
+        """
         self._sets: dict[str, set[str]] = {}
         self._lists: dict[str, list[str]] = {}
         self._lookup: dict[str, dict[str, str]] = {}
@@ -105,6 +109,10 @@ class NameLexicon:
         # de-duplicate on the space-free key and keep the cleanest spelling: the
         # upstream first-name list contains stray spaces ("جو ا د") and we want
         # "جواد" to win over them.
+        """Index one list: fold keys, drop duplicates and mis-spaced spellings, bucket by first letter.
+        The upstream first-name list contains stray spaces (``جو ا د``) and the surname
+        list is frequency ordered, which the bucket order relies on.
+        """
         chosen: dict[str, str] = {}
         for name in names:
             value = normalize_persian(name).strip()
@@ -130,6 +138,9 @@ class NameLexicon:
 
     @classmethod
     def load(cls, directory: str | Path | None = None) -> NameLexicon:
+        """Load ``first_names.txt`` / ``last_names.txt`` from a folder (missing files are tolerated).
+        Default folder is ``data/lexicon``, overridable with ``NIDOCR_LEXICON_DIR``.
+        """
         settings = get_settings()
         base = Path(directory) if directory else (
             Path(settings.lexicon_dir) if settings.lexicon_dir else DEFAULT_LEXICON_DIR
@@ -140,9 +151,11 @@ class NameLexicon:
 
     # ── queries ──────────────────────────────────────────────────────
     def available(self, kind: str = "first") -> bool:
+        """True when at least one name of that kind was loaded (snapping is a no-op otherwise)."""
         return bool(self._lists.get(kind))
 
     def size(self, kind: str = "first") -> int:
+        """Number of distinct names of that kind currently indexed."""
         return len(self._lists.get(kind, []))
 
     def canonical(self, name: str, kind: str = "first") -> str | None:
@@ -152,6 +165,7 @@ class NameLexicon:
         return self._lookup[kind].get(_key(name))
 
     def contains(self, name: str, kind: str = "first") -> bool:
+        """Exact (look-alike folded) membership test for a name."""
         if not self.available(kind):
             return False
         return _key(name) in self._sets[kind]
@@ -189,6 +203,7 @@ class NameLexicon:
 
 
 def _read_lines(path: Path) -> list[str]:
+    """Read a UTF-8 name list, one name per line, ignoring blanks and whitespace noise."""
     if not path.is_file():
         return []
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -214,4 +229,5 @@ def lexicon_status() -> dict[str, object]:
 
 
 def normalise_for_lookup(text: str) -> str:
+    """Normalise text for ad-hoc lexicon lookups (NFKC + Persian folding, digits untouched)."""
     return normalize_for_compare(unicodedata.normalize("NFKC", text or ""))

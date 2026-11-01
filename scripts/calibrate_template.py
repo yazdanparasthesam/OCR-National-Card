@@ -33,6 +33,7 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
 def _norm(rect, width: int, height: int) -> list[float]:
+    """Normalise a pixel box to 0..1 coordinates for the template file."""
     x0, y0, x1, y1 = rect
     return [
         round(x0 / width, 4),
@@ -101,6 +102,7 @@ def merge(measurements: list[dict], width: int, height: int) -> dict:
 
 
 def main() -> int:
+    """Calibrate a template from card photos and write the JSON (see ``--value-position``)."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("images", nargs="+", help="card image(s) or a directory")
     parser.add_argument("--name", default="custom_card", help="template name")

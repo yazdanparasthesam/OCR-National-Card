@@ -35,10 +35,12 @@ def character_error_rate(reference: str, hypothesis: str, *, normalize: bool = T
 
 
 def character_accuracy(reference: str, hypothesis: str, *, normalize: bool = True) -> float:
+    """1 − CER between two strings, computed after Persian-aware normalisation."""
     return max(0.0, 1.0 - character_error_rate(reference, hypothesis, normalize=normalize))
 
 
 def exact_match(reference: str, hypothesis: str, *, normalize: bool = True) -> bool:
+    """True when two values are equal once normalised (digits, ZWNJ, punctuation)."""
     if normalize:
         return normalize_for_compare(reference) == normalize_for_compare(hypothesis)
     return reference == hypothesis
@@ -46,6 +48,7 @@ def exact_match(reference: str, hypothesis: str, *, normalize: bool = True) -> b
 
 @dataclass
 class FieldScore:
+    """Per-field comparison of a prediction against ground truth (exact flag + CER)."""
     key: str
     reference: str
     hypothesis: str
@@ -54,6 +57,7 @@ class FieldScore:
 
     @property
     def accuracy(self) -> float:
+        """Character accuracy of this field (0..1), derived from the stored CER."""
         return 1.0 - self.cer
 
 

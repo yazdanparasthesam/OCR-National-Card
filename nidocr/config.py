@@ -73,6 +73,7 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value):
+        """Accept a comma separated string or JSON list for the CORS origins setting."""
         if isinstance(value, str):
             value = value.strip()
             if value.startswith("["):
@@ -83,12 +84,14 @@ class Settings(BaseSettings):
     @field_validator("languages")
     @classmethod
     def _normalise_languages(cls, value: str) -> str:
+        """Normalise the language list to Tesseract's ``fas+eng`` notation."""
         langs = [item.strip() for item in value.split(",") if item.strip()]
         return "+".join(langs) if langs else "fas"
 
     @field_validator("lexicon_dir", mode="before")
     @classmethod
     def _lexicon_dir(cls, value):
+        """Treat an empty ``NIDOCR_LEXICON_DIR`` as «use the bundled folder»."""
         if value in ("", None):
             return None
         return value
@@ -96,6 +99,7 @@ class Settings(BaseSettings):
     @field_validator("tessdata_dir", mode="before")
     @classmethod
     def _empty_to_none(cls, value):
+        """Turn empty environment variables (``NIDOCR_TESSDATA_DIR=``) into ``None`` so autodetection runs."""
         if value in ("", None):
             return None
         return value
@@ -148,6 +152,7 @@ class Settings(BaseSettings):
         return True, f"tesseract={cmd} tessdata={tessdata}"
 
     def template_path(self, name: str | None = None) -> Path:
+        """Absolute path of a template file inside :attr:`template_dir`."""
         name = name or self.default_template
         path = Path(name)
         if path.suffix != ".json":

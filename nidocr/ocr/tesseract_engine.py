@@ -36,6 +36,7 @@ TSV_HEADER = (
 
 @dataclass
 class TextToken:
+    """One word returned by Tesseract with its pixel box and per-word confidence."""
     text: str
     left: int
     top: int
@@ -46,15 +47,20 @@ class TextToken:
 
     @property
     def rect(self) -> tuple[int, int, int, int]:
+        """Bounding box of the word as ``(x0, y0, x1, y1)``."""
         return self.left, self.top, self.left + self.width, self.top + self.height
 
     @property
     def centre(self) -> tuple[float, float]:
+        """Centre point of the word box (used for baseline clustering)."""
         return self.left + self.width / 2.0, self.top + self.height / 2.0
 
 
 @dataclass
 class OCRLine:
+    """One text line: its tokens, the reconstructed right-to-left and left-to-right text,
+    and the line confidence.
+    """
     text_rtl: str
     text_ltr: str
     confidence: float
@@ -64,6 +70,9 @@ class OCRLine:
 
 @dataclass
 class OCRResult:
+    """Everything one Tesseract call returned: the lines, the tokens, the plain text,
+    the confidence, the variant name and the wall-clock time.
+    """
     lines: list[OCRLine] = field(default_factory=list)
     confidence: float = 0.0
     variant: str = ""
@@ -74,18 +83,24 @@ class OCRResult:
 
     @property
     def text(self) -> str:
+        """Right-to-left reading order of all lines (the normal form for Persian text)."""
         return "\n".join(line.text_rtl for line in self.lines if line.text_rtl).strip()
 
     @property
     def text_ltr(self) -> str:
+        """Left-to-right reading order (kept as an alternative for mixed content)."""
         return "\n".join(line.text_ltr for line in self.lines if line.text_ltr).strip()
 
     @property
     def tokens(self) -> list[TextToken]:
+        """All words of all lines, in reading order."""
         return [token for line in self.lines for token in line.tokens]
 
 
 def _weighted_confidence(tokens: list[TextToken]) -> float:
+    """Confidence of a whole result, weighted by the length of each token so a single
+    short word cannot dominate the average.
+    """
     if not tokens:
         return 0.0
     weights = [max(1, len(token.text)) for token in tokens]
@@ -152,6 +167,7 @@ class TesseractEngine:
     name = "tesseract"
 
     def __init__(self, settings: Settings | None = None) -> None:
+        """Resolve the binary and tessdata folder once, and prepare the result cache."""
         self.settings = settings or get_settings()
         self._cache: dict[str, OCRResult] = {}
         self.binary = self.settings.resolved_tesseract_cmd()
@@ -159,25 +175,30 @@ class TesseractEngine:
 
     # ── setup / introspection ────────────────────────────────────────
     def ready(self) -> tuple[bool, str]:
+        """``(bool, message)``: whether Tesseract can run and, if not, why."""
         return self.settings.engine_ready()
 
     def ensure_ready(self) -> None:
+        """Raise :class:`EngineUnavailableError` when Tesseract cannot run (used before OCR)."""
         ready, message = self.ready()
         if not ready:
             raise EngineUnavailableError(message)
 
     @property
     def languages(self) -> str:
+        """Language string passed to Tesseract (``fas`` or ``fas+eng``)."""
         return self.settings.languages or "fas"
 
     @property
     def _env(self) -> dict[str, str]:
+        """Subprocess environment with ``TESSDATA_PREFIX`` pointing at our models."""
         env = dict(os.environ)
         if self.tessdata:
             env["TESSDATA_PREFIX"] = str(self.tessdata)
         return env
 
     def available_languages(self) -> list[str]:
+        """Languages present in the tessdata folder (parsed from ``--list-langs``)."""
         if not self.binary:
             return []
         try:
@@ -201,6 +222,7 @@ class TesseractEngine:
         return sorted(set(languages))
 
     def missing_languages(self) -> list[str]:
+        """Configured languages that the tessdata folder does not contain."""
         available = set(self.available_languages())
         if not available:
             return []
@@ -208,6 +230,7 @@ class TesseractEngine:
 
     # ── OCR ──────────────────────────────────────────────────────────
     def _config_string(self, psm: int, whitelist: str | None) -> list[str]:
+        """Build the ``-c key=value`` argument list (psm, whitelist, DPI) for one call."""
         args = [
             "--oem",
             str(self.settings.oem),
@@ -297,6 +320,11 @@ class TesseractEngine:
         whitelist: str | None,
         timeout: float,
     ) -> str:
+        """Run the Tesseract binary on an in-memory image and parse its TSV/plain output.
+        The image is written as BMP to a temporary file because the bundled leptonica
+        build has no PNG/JPEG codecs; every failure is turned into an empty result so a
+        single bad crop can never break a card.
+        """
         if not self.binary:
             raise EngineUnavailableError(
                 "Tesseract binary not found. Install it or set NIDOCR_TESSERACT_CMD."
@@ -350,6 +378,7 @@ class TesseractEngine:
         return self.read(image, psm=psm, whitelist=None, variant=variant)
 
     def version(self) -> str:
+        """Version banner of the binary (``unknown`` when it cannot be queried)."""
         if not self.binary:
             return "unavailable"
         try:
@@ -361,6 +390,7 @@ class TesseractEngine:
             return "unknown"
 
     def clear_cache(self) -> None:
+        """Drop the per-image result cache (useful after changing tessdata or settings)."""
         self._cache.clear()
 
 

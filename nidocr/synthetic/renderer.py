@@ -40,13 +40,16 @@ class CardSpec:
 
     @property
     def national_code(self) -> str:
+        """The national code of this synthetic identity, rebuilt with a valid checksum."""
         return self.fields.get("national_code", "")
 
     def to_dict(self) -> dict:
+        """The identity as a plain dict (written next to each generated image as ground truth)."""
         return {"fields": dict(self.fields), "gender": self.gender, "photo_hue": self.photo_hue}
 
     @classmethod
     def from_dict(cls, payload: dict) -> CardSpec:
+        """Rebuild an identity from its ground-truth dict."""
         return cls(
             fields=dict(payload.get("fields", {})),
             gender=payload.get("gender", "مرد"),
@@ -56,6 +59,9 @@ class CardSpec:
 
 # ── random data ──────────────────────────────────────────────────────────────
 def random_spec(seed: int | None = None) -> CardSpec:
+    """Create a random but realistic identity (name, father, birth date, valid code, serial, gender).
+    ``seed`` makes it reproducible, which is what the benchmarks rely on.
+    """
     rng = np.random.default_rng(seed)
     female = bool(rng.integers(0, 2))
     first = name_bank.FEMALE_FIRST_NAMES[int(rng.integers(0, len(name_bank.FEMALE_FIRST_NAMES)))] if female else name_bank.MALE_FIRST_NAMES[int(rng.integers(0, len(name_bank.MALE_FIRST_NAMES)))]
@@ -100,12 +106,14 @@ def shape(text: str, *, persian_digits: bool = False) -> str:
 
 @dataclass
 class FontSet:
+    """The three fonts a rendered card needs (values, labels, title), loaded lazily and cached."""
     value: Path = DEFAULT_VALUE_FONT
     label: Path = DEFAULT_LABEL_FONT
     title: Path = DEFAULT_TITLE_FONT
     cache: dict = field(default_factory=dict)
 
     def get(self, role: str, size: int) -> ImageFont.FreeTypeFont:
+        """Load (and cache) one font role at the requested pixel size."""
         key = (role, size)
         if key not in self.cache:
             path = getattr(self, role)
@@ -135,6 +143,7 @@ def _guilloche(width: int, height: int, rng: np.random.Generator) -> np.ndarray:
 
 
 def _background(width: int, height: int, rng: np.random.Generator) -> np.ndarray:
+    """Draw the guilloche-like background: colour gradient, faint arcs and card border."""
     yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
     base_top = np.array([196, 214, 178], np.float32)  # BGR: pale green
     base_bottom = np.array([170, 186, 210], np.float32)  # pale blue
@@ -151,6 +160,7 @@ def _background(width: int, height: int, rng: np.random.Generator) -> np.ndarray
 
 
 def _draw_photo(canvas: np.ndarray, box, hue: int) -> None:
+    """Draw the placeholder ID photo (coloured rectangle with a head-and-shoulders silhouette)."""
     x0, y0, x1, y1 = box
     width, height = x1 - x0, y1 - y0
     if width < 8 or height < 8:
@@ -170,6 +180,7 @@ def _draw_photo(canvas: np.ndarray, box, hue: int) -> None:
 
 
 def _draw_emblem(canvas: np.ndarray, box) -> None:
+    """Draw the circular emblem used on the card."""
     x0, y0, x1, y1 = box
     centre = ((x0 + x1) // 2, (y0 + y1) // 2)
     radius = max(4, min(x1 - x0, y1 - y0) // 2)
@@ -201,6 +212,7 @@ def render_card(
     decorations = template.raw.get("decorations", {})
 
     def scale_box(box):
+        """Convert a normalised template box to pixels for the canvas being rendered."""
         if not box:
             return None
         x0 = int(round(box[0] * canvas_width))
@@ -226,6 +238,7 @@ def render_card(
     draw = ImageDraw.Draw(image)
 
     def draw_text(text: str, box, *, size: int, font_role: str, persian_digits: bool = False, colour=(38, 38, 46)):
+        """Right-align shaped Persian text inside a box and paint it on the card."""
         if not box:
             return
         x0, y0, x1, y1 = box
@@ -285,6 +298,7 @@ def render_card(
 
 
 def _label_text(template: TemplateLayout, key: str) -> str:
+    """The printed label of a field for this template (falls back to the Persian label)."""
     from nidocr.fields.definitions import FIELD_SPECS
 
     spec = FIELD_SPECS.get(key)

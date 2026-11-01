@@ -20,6 +20,10 @@ router = APIRouter(tags=["health"])
     summary="سرویس سالم است؟ / service health",
 )
 def health() -> HealthResponse:
+    """Report readiness: engine name/binary, tessdata folder, languages, templates, fields.
+    Returns ``status='degraded'`` (HTTP 200) when Tesseract cannot run, so a load
+    balancer can keep the pod alive while the operator reads ``engine_message``.
+    """
     engine = get_engine()
     ready, message = engine.ready()
     return HealthResponse(
@@ -41,6 +45,7 @@ def health() -> HealthResponse:
     summary="نام‌های فرهنگ واژگان و امکانات فعال / lexicon + feature flags",
 )
 def capabilities() -> dict:
+    """Report optional capabilities: lexicon sizes and the list of readable fields."""
     return {
         "version": __version__,
         "lexicon": lexicon_status(),

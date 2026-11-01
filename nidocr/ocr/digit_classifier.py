@@ -40,6 +40,13 @@ FEATURE_DIM = FEATURE_SIZE * FEATURE_SIZE
 
 @dataclass
 class DigitPrediction:
+    """Result of classifying one Persian digit glyph.
+
+    ``digit`` is the winner, ``confidence`` a 0–100 score, ``similarity`` the cosine
+    similarity of the winning cluster, ``margin`` the gap to the runner-up (a low
+    margin means the glyph is genuinely ambiguous) and ``options`` the top-3
+    ``(digit, share)`` pairs that the field reader turns into alternatives.
+    """
     digit: str
     confidence: float  # 0..100
     similarity: float
@@ -81,6 +88,10 @@ class PersianDigitClassifier:
     name = "glyph-knn"
 
     def __init__(self, model_path: str | Path | None = None, *, neighbours: int = 7) -> None:
+        """Create the k-NN classifier and immediately load the bundled ``.npz`` model.
+        ``neighbours`` is the k of the vote; 7 was the best trade-off measured on the
+        holdout font (fewer → noisy, more → blurred classes).
+        """
         self.model_path = Path(model_path) if model_path else DEFAULT_MODEL_PATH
         self.neighbours = neighbours
         self._features: np.ndarray | None = None
@@ -90,6 +101,10 @@ class PersianDigitClassifier:
 
     # ── model handling ───────────────────────────────────────────────
     def _load(self) -> None:
+        """Load features/labels from the ``npz`` and pre-normalise the rows for cosine search.
+        A corrupt or missing file leaves the classifier unavailable instead of raising,
+        so the pipeline can fall back to Tesseract per glyph.
+        """
         if not self.model_path.is_file():
             return
         try:
@@ -106,15 +121,20 @@ class PersianDigitClassifier:
 
     @property
     def available(self) -> bool:
+        """True when a model with at least one sample is loaded."""
         return self._features is not None and self._labels is not None and len(self._labels) > 0
 
     @property
     def accuracy(self) -> float | None:
+        """Holdout accuracy recorded in the model metadata (``None`` if not trained with one)."""
         value = self.metadata.get("holdout_accuracy")
         return float(value) if value is not None else None
 
     # ── inference ────────────────────────────────────────────────────
     def classify(self, patch: np.ndarray) -> DigitPrediction | None:
+        """Classify one glyph patch (numpy image) → :class:`DigitPrediction` or ``None``.
+        ``None`` means «no opinion» (empty patch) and lets the caller try Tesseract.
+        """
         if not self.available:
             return None
         features = featurize(patch)
@@ -123,6 +143,10 @@ class PersianDigitClassifier:
         return self.classify_features(features)
 
     def classify_features(self, features: np.ndarray) -> DigitPrediction | None:
+        """Classify a pre-computed feature vector with a cosine k-NN vote.
+        Returns the winning digit with its similarity, the runner-up margin and the
+        top-3 shares that later become field-level alternatives.
+        """
         if not self.available or features is None:
             return None
         vector = features.astype(np.float32)
@@ -160,6 +184,7 @@ class PersianDigitClassifier:
         )
 
     def classify_many(self, patches: list[np.ndarray]) -> list[DigitPrediction | None]:
+        """Classify a batch of glyph patches in one matrix multiplication (used by the trainer)."""
         return [self.classify(patch) for patch in patches]
 
 

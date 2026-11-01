@@ -35,6 +35,10 @@ class Candidate(BaseModel):
 
 
 class FieldResult(BaseModel):
+    """One field of the card as returned by the API/UI: value (Latin digits), the same
+    value in Persian digits, confidence, validator flags, Persian message, bounding
+    box, provenance and — in debug mode — the ROI crop and every candidate.
+    """
     model_config = ConfigDict(populate_by_name=True)
 
     key: str
@@ -57,6 +61,7 @@ class FieldResult(BaseModel):
 
     @classmethod
     def empty(cls, spec, *, message: str = "استخراج نشد") -> FieldResult:
+        """Build an «not found» result for a field with a Persian reason."""
         return cls(
             key=spec.key,
             label_fa=spec.label_fa,
@@ -67,11 +72,15 @@ class FieldResult(BaseModel):
         )
 
     def with_persian_digits(self) -> FieldResult:
+        """Fill ``value_fa`` from ``value`` (dates/serials keep their separators)."""
         value_fa = to_persian_digits(self.value) if self.kind in {"digits", "date", "serial"} else self.value
         return self.model_copy(update={"value_fa": value_fa or self.value})
 
 
 class QualityReport(BaseModel):
+    """Image-quality facts about the processed photo (sharpness, exposure, glare,
+    resolution, detection score) plus the Persian warnings derived from them.
+    """
     sharpness: float = 0.0
     brightness: float = 0.0
     contrast: float = 0.0
@@ -85,6 +94,9 @@ class QualityReport(BaseModel):
 
 
 class CardResult(BaseModel):
+    """The complete answer for one card: all fields in reading order, aggregate
+    confidence/validation counters, timing, quality report and debug images.
+    """
     success: bool = True
     template: str = "national_card_front"
     template_title_fa: str = "کارت ملی هوشمند"
@@ -105,6 +117,7 @@ class CardResult(BaseModel):
 
     # ── convenience ──────────────────────────────────────────────────
     def ordered_fields(self) -> list[FieldResult]:
+        """Fields in the order they are printed on the card (national code first)."""
         order = self.field_order or list(self.fields)
         return [self.fields[key] for key in order if key in self.fields]
 
@@ -113,10 +126,12 @@ class CardResult(BaseModel):
         return {key: field.value for key, field in self.fields.items()}
 
     def get(self, key: str, default: str = "") -> str:
+        """Value of one field (``""`` when the field is missing) — the quick accessor for callers."""
         field = self.fields.get(key)
         return field.value if field else default
 
     def summary(self) -> dict[str, Any]:
+        """Compact dict with the counters and warnings (used by logs and the UI header)."""
         return {
             "success": self.success,
             "template": self.template,
@@ -139,6 +154,7 @@ class FieldOnlyResult(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    """Answer of ``GET /health``: engine readiness, models, templates and fields."""
     status: Literal["ok", "degraded"] = "ok"
     version: str
     engine: str
@@ -152,6 +168,7 @@ class HealthResponse(BaseModel):
 
 
 class FieldInfo(BaseModel):
+    """Metadata of a field (``GET /fields``): key, URL path, labels, kind, example."""
     key: str
     path: str
     label_fa: str
@@ -163,6 +180,7 @@ class FieldInfo(BaseModel):
 
 
 class TemplateInfo(BaseModel):
+    """Metadata of a template: name, titles, canvas and the fields it defines."""
     name: str
     title_fa: str
     title_en: str
@@ -171,6 +189,7 @@ class TemplateInfo(BaseModel):
 
 
 class NationalCodeValidation(BaseModel):
+    """Answer of ``POST /validate/national-code``: normalised value, validity and repair flag."""
     input: str
     value: str
     valid: bool
@@ -179,6 +198,7 @@ class NationalCodeValidation(BaseModel):
 
 
 class ErrorResponse(BaseModel):
+    """Stable error envelope ``{detail, code, extra}`` returned by the API for every failure."""
     detail: str
     code: str = "error"
     extra: dict[str, Any] = Field(default_factory=dict)

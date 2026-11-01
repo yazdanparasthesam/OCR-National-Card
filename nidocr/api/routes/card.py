@@ -44,6 +44,9 @@ async def read_cards(
     template: str | None = Form(None),
     debug: bool = Form(False),
 ) -> list[CardResult]:
+    """Read several uploaded cards in one request (max 12) and return one result each.
+    Each image is decoded and processed independently; failures do not abort the batch.
+    """
     if len(files) > 12:
         raise HTTPException(status_code=413, detail="حداکثر ۱۲ تصویر در هر درخواست")
     return [
@@ -57,4 +60,5 @@ async def read_cards(
     summary="قالب‌های موجود / available templates",
 )
 def card_templates() -> list[str]:
+    """List the template names the pipeline knows about (front/back of the card or custom)."""
     return available_templates()

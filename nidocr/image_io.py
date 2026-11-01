@@ -14,6 +14,7 @@ MAX_PIXELS = 40_000_000  # ~40 MP guard against decompression bombs
 
 
 def _to_array(pil_image) -> np.ndarray:
+    """Convert a PIL image to a BGR ``uint8`` numpy array (dropping alpha)."""
     array = np.array(pil_image.convert("RGB"))
     return cv2.cvtColor(array, cv2.COLOR_RGB2BGR)
 
@@ -63,6 +64,9 @@ def load_image(source) -> np.ndarray:
 
 
 def _decode(data: bytes, name: str | None = None) -> np.ndarray:
+    """Decode image bytes with OpenCV, falling back to PIL for exotic formats.
+    Also enforces the 40-megapixel guard so a huge upload cannot exhaust memory.
+    """
     if not data:
         raise InvalidImageError("Empty image payload")
     buffer = np.frombuffer(data, dtype=np.uint8)
@@ -84,6 +88,7 @@ def _decode(data: bytes, name: str | None = None) -> np.ndarray:
 
 
 def save_image(path: str | Path, image: np.ndarray, quality: int = 92) -> Path:
+    """Write an image to disk as JPEG/PNG, creating parent folders and JPEG quality params."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     params = [int(cv2.IMWRITE_JPEG_QUALITY), quality] if path.suffix.lower() in {".jpg", ".jpeg"} else []

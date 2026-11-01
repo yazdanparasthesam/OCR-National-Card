@@ -30,6 +30,10 @@ from nidocr.config import Settings, get_settings
 
 
 def __getattr__(name: str):  # lazy import so `import nidocr` stays light
+    """Expose the public helpers (``get_ocr``, ``__version__`` …) lazily on first access.
+    Lazy access keeps ``import nidocr`` cheap: the OCR stack (cv2, numpy, the
+    Tesseract client) is only imported when a symbol is actually used.
+    """
     if name == "NationalCardOCR":
         from nidocr.pipeline import NationalCardOCR
 

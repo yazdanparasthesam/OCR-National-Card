@@ -30,6 +30,9 @@ Rect = tuple[int, int, int, int]
 
 @dataclass
 class Glyph:
+    """One segmented glyph of a numeric field: its box in the upscaled ROI, the chosen
+    value, the confidence that produced it and the runner-up ``(digit, share)`` options.
+    """
     box: Rect
     value: str
     confidence: float
@@ -38,6 +41,9 @@ class Glyph:
 
 @dataclass
 class GlyphReading:
+    """The reading of a whole numeric field: the string, its confidence, the glyphs that
+    built it and the alternative strings that the field validator may prefer.
+    """
     text: str = ""
     confidence: float = 0.0
     glyphs: list[Glyph] = field(default_factory=list)
@@ -45,14 +51,19 @@ class GlyphReading:
     alternatives: list[str] = field(default_factory=list)
 
     def __bool__(self) -> bool:
+        """A reading is truthy when it produced any text."""
         return bool(self.text)
 
     @property
     def digits_only(self) -> str:
+        """The reading with separators and any stray characters removed."""
         return "".join(char for char in self.text if char.isdigit())
 
 
 def _runs(flags: np.ndarray, max_gap: int = 2) -> list[tuple[int, int]]:
+    """Group consecutive True flags into ``(start, end)`` runs, tolerating gaps up to ``max_gap``.
+    Used on column/row ink profiles to find glyph boundaries.
+    """
     runs: list[tuple[int, int]] = []
     start = None
     gap = 0
@@ -217,6 +228,7 @@ def _keep_main_cluster(boxes: list[Rect], max_gap_ratio: float = 0.85) -> list[R
 
 
 def _model_width(width: int) -> int:
+    """Side length the classifier expects for a glyph patch (square, resized from the box)."""
     if width % 2 == 0:
         width += 1
     return int(np.clip(width, 21, 61))

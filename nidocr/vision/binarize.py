@@ -32,6 +32,7 @@ def otsu(gray: np.ndarray) -> np.ndarray:
 
 
 def adaptive(gray: np.ndarray, block_size: int = 31, c: int = 12) -> np.ndarray:
+    """Gaussian adaptive threshold — the fourth preprocessing variant of a field ROI."""
     if gray.ndim != 2:
         gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
     if block_size % 2 == 0:

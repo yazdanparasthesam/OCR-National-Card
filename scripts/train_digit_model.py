@@ -42,6 +42,7 @@ NUMERIC_FIELDS = ("national_code", "serial_number", "birth_date")
 
 
 def discover_fonts(extra_dirs: list[Path]) -> list[Path]:
+    """Find the training fonts (bundled + optional extra folders) used to render glyphs."""
     folders = [PROJECT_ROOT / "assets" / "fonts" / "train", PROJECT_ROOT / "assets" / "fonts", *extra_dirs]
     fonts: list[Path] = []
     for folder in folders:
@@ -151,6 +152,9 @@ def build_dataset(
     seed: int,
     limit_per_class: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Harvest Persian digit glyphs from rendered cards using the *same* segmentation as the pipeline.
+    This «train like you infer» contract is what keeps the classifier accurate.
+    """
     rng = np.random.default_rng(seed)
     features: list[np.ndarray] = []
     labels: list[int] = []
@@ -172,6 +176,7 @@ def build_dataset(
 
 
 def evaluate(features: np.ndarray, labels: np.ndarray, test_features: np.ndarray, test_labels: np.ndarray) -> dict:
+    """Measure accuracy per digit and on a held-out font (reported in ``reports/digits.md``)."""
     norms = np.linalg.norm(features, axis=1, keepdims=True) + 1e-8
     gallery = features / norms
     predictions = []
@@ -194,6 +199,7 @@ def evaluate(features: np.ndarray, labels: np.ndarray, test_features: np.ndarray
 
 
 def main() -> int:
+    """CLI: build the dataset, evaluate, and write ``models/persian_digits.npz``."""
     parser = argparse.ArgumentParser(description="Train the Persian digit k-NN model")
     parser.add_argument("--fonts-dir", action="append", default=[], help="extra folder with .ttf fonts")
     parser.add_argument("--cards", type=int, default=120, help="synthetic cards rendered for training")

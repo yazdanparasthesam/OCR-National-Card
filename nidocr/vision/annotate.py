@@ -15,6 +15,7 @@ COLOR_NEUTRAL = (200, 200, 200)
 
 
 def field_color(validated: bool, confidence: float, repaired: bool = False):
+    """Colour for a field box: green when validated, amber when repaired or doubtful, red when missing."""
     if validated and confidence >= 60:
         return COLOR_VALID
     if repaired or validated:
@@ -70,6 +71,7 @@ def encode_png_base64(image: np.ndarray, *, quality: int = 88) -> str:
 
 
 def encode_jpeg_base64(image: np.ndarray, quality: int = 82) -> str:
+    """Encode an image as base64 JPEG (smaller payloads for the UI/API debug images)."""
     success, buffer = cv2.imencode(".jpg", image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
     if not success:  # pragma: no cover
         return ""
@@ -77,11 +79,13 @@ def encode_jpeg_base64(image: np.ndarray, quality: int = 82) -> str:
 
 
 def data_uri(image: np.ndarray, fmt: str = "png") -> str:
+    """Wrap encoded image bytes into a ``data:image/...;base64,…`` URI."""
     payload = encode_png_base64(image) if fmt == "png" else encode_jpeg_base64(image)
     return f"data:image/{fmt};base64,{payload}" if payload else ""
 
 
 def bgr_to_rgb(image: np.ndarray) -> np.ndarray:
+    """Convert OpenCV's BGR order to the RGB order Streamlit/PIL expect."""
     if image.ndim == 2:
         return image
     if image.shape[2] == 4:

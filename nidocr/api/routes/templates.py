@@ -12,6 +12,7 @@ router = APIRouter(prefix="/templates", tags=["templates"])
 
 
 def _info(name: str) -> TemplateInfo:
+    """Load one template and project it to the public :class:`TemplateInfo` model."""
     try:
         layout = load_template(name)
     except TemplateNotFoundError as exc:
@@ -27,6 +28,7 @@ def _info(name: str) -> TemplateInfo:
 
 @router.get("", response_model=list[TemplateInfo], summary="قالب‌ها / templates")
 def list_templates() -> list[TemplateInfo]:
+    """Return every shipped template with its canvas size and field list."""
     return [_info(name) for name in available_templates()]
 
 
@@ -37,4 +39,5 @@ def list_templates() -> list[TemplateInfo]:
     responses={404: {"description": "template not found"}},
 )
 def template(name: str) -> TemplateInfo:
+    """Return a single template by name (404 when it does not exist)."""
     return _info(name)

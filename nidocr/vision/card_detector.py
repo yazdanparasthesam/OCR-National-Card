@@ -35,6 +35,7 @@ class CardDetection:
     notes: list[str] = field(default_factory=list)
 
     def as_points(self) -> list[tuple[float, float]]:
+        """The four corners as a plain list of ``(x, y)`` tuples (JSON friendly)."""
         return [(float(x), float(y)) for x, y in self.quad]
 
 
@@ -58,6 +59,7 @@ def order_quad(points: np.ndarray | list[list[float]]) -> np.ndarray:
 
 
 def _is_duplicate(quad: np.ndarray) -> bool:
+    """True when two corners are the same point, i.e. the quad is degenerate."""
     uniq = {tuple(np.round(point, 1)) for point in quad}
     return len(uniq) < 4
 
@@ -108,6 +110,9 @@ def _touches_border(quad: np.ndarray, width: int, height: int, tolerance: float 
 
 
 def _score(quad: np.ndarray, frame_area: float, expected_aspect: float) -> float:
+    """Score a quadrilateral hypothesis: closeness to the card aspect ratio, area and
+    right angles, in 0..1. Higher is a better card candidate.
+    """
     aspect, area_ratio, rectangularity = _quad_metrics(quad, frame_area)
     if aspect <= 1.0:
         return 0.0

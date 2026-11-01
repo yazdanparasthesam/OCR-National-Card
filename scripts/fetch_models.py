@@ -38,12 +38,14 @@ CONFIGS = ("tessconfigs",)
 
 
 def _download(url: str, target: Path) -> None:
+    """Download one URL to a local path (https only, with a timeout)."""
     print(f"↓ {url}")
     with urllib.request.urlopen(url, timeout=120) as response:  # noqa: S310 - fixed https URL
         target.write_bytes(response.read())
 
 
 def fetch_tessdata(kind: str, *, force: bool) -> int:
+    """Fetch the missing ``*.traineddata`` files from the tessdata_fast/best archive."""
     missing = [code for code in LANGUAGES if force or not (TESSDATA_DIR / f"{code}.traineddata").is_file()]
     if not missing:
         print("tessdata: already present")
@@ -84,6 +86,7 @@ def fetch_configs() -> int:
 
 
 def check_digit_model() -> int:
+    """Check that the Persian digit classifier exists and explain how to rebuild it."""
     if DIGIT_MODEL.is_file():
         print(f"digit classifier: present ({DIGIT_MODEL.stat().st_size / 1024:.0f} kB)")
         return 0
@@ -93,6 +96,7 @@ def check_digit_model() -> int:
 
 
 def find_system_tesseract() -> str | None:
+    """Report a system Tesseract binary when one is on ``PATH``."""
     found = shutil.which("tesseract")
     if found:
         print(f"system tesseract : {found}")
@@ -100,6 +104,7 @@ def find_system_tesseract() -> str | None:
 
 
 def main() -> int:
+    """CLI: download models, write the configs and print what is still missing."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kind", default="fast", choices=sorted(SOURCES), help="tessdata variant")
     parser.add_argument("--best", action="store_true", help="shorthand for --kind best")

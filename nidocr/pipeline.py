@@ -75,10 +75,12 @@ class PreparedCard:
 
     @property
     def canvas(self) -> tuple[int, int]:
+        """Size of the rectified card canvas (the coordinate system of every box)."""
         height, width = self.color.shape[:2]
         return width, height
 
     def bbox(self, rect: Rect) -> BBox:
+        """Convert a pixel rect of the canvas to the normalised :class:`BBox` of the API."""
         width, height = self.canvas
         x0, y0, x1, y1 = rect
         return BBox(
@@ -97,12 +99,14 @@ class NationalCardOCR:
     """Main entry point of the library."""
 
     def __init__(self, settings: Settings | None = None, engine: TesseractEngine | None = None) -> None:
+        """Bind a settings object and the Tesseract engine (both default to the singletons)."""
         self.settings = settings or get_settings()
         self.engine = engine or TesseractEngine(self.settings)
         self._templates: dict[str, TemplateLayout] = {}
 
     # ── templates ────────────────────────────────────────────────────
     def template(self, name: str | None = None) -> TemplateLayout:
+        """Return a template layout by name, cached per process and invalidated on edit."""
         key = name or self.settings.default_template
         if key not in self._templates:
             self._templates[key] = load_template(key, self.settings)
@@ -248,9 +252,11 @@ class NationalCardOCR:
         )
 
     def extract_batch(self, sources: list, **kwargs) -> list[CardResult]:
+        """Run :meth:`extract` over several images and return one result per image."""
         return [self.extract(source, **kwargs) for source in sources]
 
     def describe(self) -> list[dict]:
+        """Public description of every field (key, URL path, labels, kind, example)."""
         return [
             {
                 "key": spec.key,
@@ -310,6 +316,11 @@ class NationalCardOCR:
         return refined if rect_ink(binary, refined) >= 0.004 else rect
 
     def _text_candidates(self, ocr: OCRResult, spec: FieldSpec) -> list[str]:
+        """Turn one OCR result into candidate strings for a text field.
+        Adds the cleaned line, the line with a leaked label removed, a digits-only
+        variant for numeric-looking fields and — because Tesseract occasionally emits a
+        word in visual order — the reversed string, leaving the ranking to reject it.
+        """
         texts: list[str] = []
         for line in ocr.lines:
             texts.extend([line.text_rtl, line.text_ltr])
@@ -436,6 +447,7 @@ class NationalCardOCR:
 
     @staticmethod
     def _numeric_variant(text: str, spec: FieldSpec) -> str | None:
+        """Digits-only / date-shaped / serial-shaped form of a line, or ``None`` when not applicable."""
         if spec.kind == "digits":
             return only_digits(text) or None
         if spec.kind == "date":
@@ -449,6 +461,10 @@ class NationalCardOCR:
 
     @staticmethod
     def _rank(outcome: FieldOutcome, confidence: float, spec: FieldSpec | None = None) -> float:
+        """Score a candidate so the best reading wins across ROIs, variants and psm modes.
+        Weights: validator outcome first, then OCR confidence, plus bonuses for the
+        primary reading and for anchors, minus a penalty for repaired values.
+        """
         score = 2.0 * outcome.score + min(max(confidence, 0.0), 100.0) / 100.0
         if spec is not None and spec.kind == "serial" and len(outcome.value) > 12:
             score -= 0.4  # implausibly long serial: usually merged glyphs
@@ -583,6 +599,7 @@ class NationalCardOCR:
 
     # ── debug artefacts ──────────────────────────────────────────────
     def _attach_debug(self, prepared: PreparedCard, result: CardResult) -> None:
+        """Attach the annotated overlay (field boxes) and the preprocessed card to a result."""
         boxes: dict[str, Rect] = {}
         colors: dict[str, tuple[int, int, int]] = {}
         labels: dict[str, str] = {}
@@ -612,6 +629,7 @@ def get_ocr(settings: Settings | None = None) -> NationalCardOCR:
 
 
 def reset_ocr() -> None:
+    """Forget the process-wide pipeline singleton (used by tests and after config changes)."""
     global _ocr
     _ocr = None
 

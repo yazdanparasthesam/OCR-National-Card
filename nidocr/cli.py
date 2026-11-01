@@ -32,6 +32,7 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 def _collect_images(targets: list[str]) -> list[Path]:
+    """Expand the CLI arguments into image paths (folders are scanned for image files)."""
     images: list[Path] = []
     for target in targets:
         path = Path(target)
@@ -45,12 +46,17 @@ def _collect_images(targets: list[str]) -> list[Path]:
 
 
 def _print_card(result, *, digits: bool = True) -> None:
+    """Print one card as a Persian aligned table (value, confidence, validator message).
+
+    ``digits=False`` keeps ASCII digits for terminals without Persian shaping.
+    """
     if digits:
         from nidocr.ocr.text import to_persian_digits as fa
 
     else:
 
         def fa(text: str) -> str:
+            """Identity formatter: print ASCII digits unchanged."""
             return text
 
     print(f"\n{'=' * 62}")
@@ -68,6 +74,9 @@ def _print_card(result, *, digits: bool = True) -> None:
 
 # ── commands ─────────────────────────────────────────────────────────────────
 def cmd_read(args: argparse.Namespace) -> int:
+    """Command ``nidocr read``: read one image or a folder, optionally write JSON.
+    Exit code 1 when a card fails completely, so batch scripts can react.
+    """
     from nidocr.pipeline import get_ocr
 
     ocr = get_ocr()
@@ -98,6 +107,7 @@ def cmd_read(args: argparse.Namespace) -> int:
 
 
 def cmd_field(args: argparse.Namespace) -> int:
+    """Command ``nidocr field``: read a single field and print value/raw/confidence."""
     from nidocr.pipeline import get_ocr
 
     spec = get_field_spec(args.field)
@@ -115,6 +125,7 @@ def cmd_field(args: argparse.Namespace) -> int:
 
 
 def cmd_fields(_args: argparse.Namespace) -> int:
+    """Command ``nidocr fields``: list the readable fields with their URL paths."""
     from nidocr.pipeline import get_ocr
 
     print(f"{'key':<16}{'path':<18}{'label':<18}{'kind':<8}required")
@@ -129,6 +140,7 @@ def cmd_fields(_args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
+    """Command ``nidocr check``: mod-11 validation of a national code (exit 1 when invalid)."""
     outcome = validate_national_code(args.value)
     print(json.dumps(
         {
@@ -145,6 +157,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 
 def cmd_date(args: argparse.Namespace) -> int:
+    """Command ``nidocr date``: Jalali validation of a birth date (exit 1 when invalid)."""
     outcome = validate_birth_date(args.value)
     print(json.dumps(
         {
@@ -161,6 +174,7 @@ def cmd_date(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
+    """Command ``nidocr serve``: start the FastAPI service with uvicorn."""
     import uvicorn
 
     print(f"NIDOCR API → http://{args.host}:{args.port}/docs")
@@ -175,6 +189,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
+    """Command ``nidocr ui``: start the Streamlit interface as a subprocess."""
     app_path = PROJECT_ROOT / "nidocr" / "ui" / "app.py"
     command = [
         sys.executable,
@@ -196,6 +211,7 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_bench(args: argparse.Namespace) -> int:
+    """Command ``nidocr bench``: delegate to ``scripts/benchmark.py`` with the same arguments."""
     command = [sys.executable, str(PROJECT_ROOT / "scripts" / "benchmark.py")]
     if args.dataset:
         command += ["--dataset", args.dataset]
@@ -209,6 +225,9 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
 
 def cmd_doctor(_args: argparse.Namespace) -> int:
+    """Command ``nidocr doctor``: report engine, models, lexicon, templates and settings.
+    Exit code 1 when the OCR engine is not usable, which makes it CI friendly.
+    """
     settings = get_settings()
     from nidocr.ocr.digit_classifier import get_digit_classifier
     from nidocr.ocr.tesseract_engine import get_engine
@@ -249,12 +268,14 @@ def self_width(_width: int) -> int:
 
 
 def cmd_templates(_args: argparse.Namespace) -> int:
+    """Command ``nidocr templates``: print the available template names."""
     for name in available_templates():
         print(name)
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argparse tree: one sub-command per ``cmd_*`` function."""
     parser = argparse.ArgumentParser(prog="nidocr", description="Iranian national card OCR (کارت ملی)")
     parser.add_argument("--version", action="version", version=f"nidocr {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -315,6 +336,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point: parse the arguments and dispatch to the selected command."""
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args) or 0)

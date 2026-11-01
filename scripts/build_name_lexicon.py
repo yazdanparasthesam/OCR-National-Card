@@ -36,6 +36,7 @@ PERSIAN_RANGE = set("آابپتثجچحخدذرزژسشصضطظعغفقکگلم�
 
 
 def clean(name: str) -> str:
+    """Normalise one source name and drop rows that are not clean Persian words."""
     value = normalize_persian(name).replace("\u200c", " ").strip()
     value = " ".join(part for part in value.split() if part)
     if not value or not all(char in PERSIAN_RANGE or char == " " for char in value):
@@ -46,6 +47,7 @@ def clean(name: str) -> str:
 
 
 def read_first_names(path: Path) -> list[str]:
+    """Read the gendered first-name CSV and return unique normalised names."""
     names: list[str] = []
     seen: set[str] = set()
     with path.open(encoding="utf-8-sig", newline="") as handle:
@@ -60,6 +62,7 @@ def read_first_names(path: Path) -> list[str]:
 
 
 def read_surnames(path: Path, limit: int) -> list[str]:
+    """Read the surname CSV, sort by frequency and keep the ``limit`` most common."""
     rows: list[tuple[float, str]] = []
     with path.open(encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -85,6 +88,7 @@ def read_surnames(path: Path, limit: int) -> list[str]:
 
 
 def main() -> int:
+    """Write ``first_names.txt`` and ``last_names.txt`` into the lexicon folder."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--first-names-csv", required=True)
     parser.add_argument("--surnames-csv", required=True)

@@ -19,6 +19,10 @@ from nidocr.errors import NIDOCRError
 
 
 def create_app() -> FastAPI:
+    """Build the FastAPI application (routers, CORS, error mapping, landing page).
+    Factory form so tests and ``uvicorn --reload`` can create isolated apps; every
+    router is mounted under ``settings.api_prefix`` (default ``/api/v1``).
+    """
     settings = get_settings()
     app = FastAPI(
         title="NIDOCR — Iranian National Card OCR",
@@ -48,6 +52,9 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(NIDOCRError)
     async def _handle_nidocr_error(_request, exc: NIDOCRError) -> JSONResponse:  # noqa: ANN001
+        """Translate a :class:`NIDOCRError` into the stable JSON error envelope
+        ``{detail, code, extra}`` with the status code declared by the exception class.
+        """
         return JSONResponse(
             status_code=getattr(exc, "status_code", 500),
             content={"detail": exc.message, "code": getattr(exc, "code", "error"), "extra": exc.detail},
@@ -55,6 +62,9 @@ def create_app() -> FastAPI:
 
     @app.get("/", include_in_schema=False)
     async def index() -> dict:
+        """Landing page: service name, version and a map of the available endpoints.
+        Kept out of the OpenAPI schema because ``/docs`` is the real documentation.
+        """
         prefix = settings.api_prefix
         return {
             "name": "NIDOCR",

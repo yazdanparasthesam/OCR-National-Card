@@ -79,6 +79,7 @@ def remove_shadows(gray: np.ndarray) -> np.ndarray:
 
 
 def unsharp(gray: np.ndarray, amount: float = 1.5, radius: float = 1.2) -> np.ndarray:
+    """Unsharp mask: add ``amount × (image − blur)`` back to the image to rebuild stroke edges."""
     blurred = cv2.GaussianBlur(gray, (0, 0), radius)
     return cv2.addWeighted(gray, 1 + amount, blurred, -amount, 0)
 

@@ -18,10 +18,12 @@ router = APIRouter(prefix="/fields", tags=["fields"])
     summary="فهرست فیلدها / list of readable fields",
 )
 def list_fields() -> list[FieldInfo]:
+    """Return the metadata of every readable field (key, path, Persian label, kind)."""
     return [FieldInfo(**item) for item in _describe()]
 
 
 def _describe() -> list[dict]:
+    """Describe the fields through the pipeline singleton (single source of truth)."""
     from nidocr.pipeline import get_ocr
 
     return get_ocr().describe()
@@ -34,6 +36,7 @@ def _describe() -> list[dict]:
     responses={404: {"description": "field not found"}},
 )
 def field_info(field: str) -> FieldInfo:
+    """Return the metadata of one field, or 404 when the key is unknown."""
     try:
         spec = get_field_spec(field)
     except FieldNotFoundError as exc:

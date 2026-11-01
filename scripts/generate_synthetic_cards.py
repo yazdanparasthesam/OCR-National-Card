@@ -24,6 +24,7 @@ from nidocr.synthetic.renderer import DIFFICULTIES, save_dataset  # noqa: E402
 
 
 def main() -> int:
+    """CLI: render N synthetic cards (with ground truth) into a folder for benchmarking."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--count", type=int, default=8)
     parser.add_argument("--out", default=str(PROJECT_ROOT / "data" / "samples"))

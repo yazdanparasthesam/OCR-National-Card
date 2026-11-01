@@ -19,6 +19,9 @@ from nidocr.vision.layout import Rect, rect_ink, refine_rect, value_rect_from_la
 
 @dataclass
 class Anchor:
+    """A printed field label found on the card: which field it belongs to, the matched
+    text, its pixel box, the similarity and the OCR confidence that produced it.
+    """
     field_key: str
     label_text: str
     rect: Rect
@@ -28,14 +31,17 @@ class Anchor:
 
     @property
     def weight(self) -> float:
+        """Ranking weight of an anchor: similarity first, OCR confidence as a tie-breaker."""
         return self.similarity * (0.4 + 0.006 * max(0.0, self.confidence))
 
 
 def _span_text(tokens: list[TextToken]) -> str:
+    """Join the tokens of a label span into one normalised string."""
     return normalize_for_compare(" ".join(token.text for token in tokens))
 
 
 def _matches(span: str, alias: str, threshold: float) -> float:
+    """Similarity between an OCR token span and a label alias (0 when they cannot match)."""
     target = normalize_for_compare(alias)
     if not target or not span:
         return 0.0

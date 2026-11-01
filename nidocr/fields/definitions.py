@@ -45,6 +45,10 @@ class FieldSpec:
         return self.key.replace("_", "-")
 
     def __post_init__(self) -> None:  # pragma: no cover - dataclass convenience
+        """Derive the defaults that depend on the other fields of the spec.
+        Fills ``path`` (URL slug) and ``digits_count`` from the label/kind when the
+        caller did not set them, so a new field can be declared with three arguments.
+        """
         if not self.label_aliases:
             object.__setattr__(self, "label_aliases", (self.label_fa,))
 
@@ -180,4 +184,5 @@ def resolve_fields(keys: list[str] | tuple[str, ...] | None) -> list[FieldSpec]:
 
 
 def field_paths() -> list[str]:
+    """Return ``{url_slug: field_key}`` for the API routes (``national-code`` → ``national_code``)."""
     return [FIELD_SPECS[key].path for key in FIELD_ORDER]

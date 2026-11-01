@@ -102,6 +102,7 @@ def is_persian_letter(char: str) -> bool:
 
 
 def has_persian_letters(text: str) -> bool:
+    """True when the string contains at least one Persian/Arabic letter."""
     return any(is_persian_letter(char) for char in text)
 
 
@@ -145,6 +146,7 @@ def strip_edges(text: str) -> str:
 
 
 def collapse_spaces(text: str) -> str:
+    """Collapse every run of whitespace to a single space and trim the ends."""
     return _WHITESPACE.sub(" ", text or "").strip()
 
 
@@ -159,6 +161,7 @@ def clean_ocr_text(text: str) -> str:
 
 
 def words(text: str) -> list[str]:
+    """Split a string into non-empty words after normalisation."""
     return [word for word in re.split(r"[\s" + ZWNJ + r"]+", normalize_persian(text)) if word]
 
 
@@ -169,6 +172,7 @@ def sort_tokens_rtl(tokens: list[tuple[str, int]]) -> str:
 
 
 def sort_tokens_ltr(tokens: list[tuple[str, int]]) -> str:
+    """Join ``(text, x_left)`` tokens in left-to-right order (mirror of the RTL helper)."""
     ordered = sorted(tokens, key=lambda item: item[1])
     return collapse_spaces(" ".join(token for token, _ in ordered))
 

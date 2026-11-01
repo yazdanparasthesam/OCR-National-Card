@@ -15,6 +15,7 @@ from nidocr.fields.validators import (
 
 
 def _checksum_ok(code: str) -> bool:
+    """Reference implementation of the mod-11 checksum, used to build fixtures."""
     total = sum(int(code[i]) * (10 - i) for i in range(9))
     remainder = total % 11
     check = int(code[9])
@@ -23,6 +24,7 @@ def _checksum_ok(code: str) -> bool:
 
 @pytest.mark.parametrize("code", ["0012345678", "1344005985", "0499370899"])
 def test_national_code_accepts_valid_checksums(code):
+    """Codes whose check digit satisfies mod-11 are accepted unchanged."""
     if _checksum_ok(code):
         assert is_valid_national_code(code)
 
@@ -39,11 +41,13 @@ def test_national_code_fixes_the_check_digit():
 
 @pytest.mark.parametrize("code", ["0000000000", "1111111111", "12", "abcdefghij"])
 def test_national_code_rejects_impossible_input(code):
+    """Impossible inputs (all-same digits, wrong length, letters) are rejected."""
     assert not validate_national_code(code).validated
 
 
 def test_national_code_repairs_one_wrong_digit():
     # the 7th digit is corrupted: 1344005975 -> 1344005985
+    """A wrong check digit is rebuilt from the first nine digits."""
     outcome = validate_national_code("1344005989")
     assert outcome.validated
     assert outcome.value == "1344005985"
@@ -51,10 +55,12 @@ def test_national_code_repairs_one_wrong_digit():
 
 
 def test_national_code_normalises_persian_digits_and_separators():
+    """Spaces and Persian digits are normalised before validation."""
     assert validate_national_code("۱۳۴۴ ۰۰۵ ۹۸۵").value == "1344005985"
 
 
 def test_national_code_rejects_repeated_digits():
+    """A code made of one repeated digit is never valid."""
     assert not validate_national_code("1111111111").validated
 
 
@@ -67,6 +73,7 @@ def test_national_code_rejects_repeated_digits():
     ],
 )
 def test_birth_date_normalisation(raw, expected):
+    """Dates are normalised to ``YYYY/MM/DD`` with ASCII digits."""
     outcome = validate_birth_date(raw)
     assert outcome.validated
     assert outcome.value == expected
@@ -74,10 +81,12 @@ def test_birth_date_normalisation(raw, expected):
 
 @pytest.mark.parametrize("raw", ["0900/01/01", "1360/00/10", "1399/07/31", "1360/12/30"])
 def test_birth_date_rejects_impossible_dates(raw):
+    """Out-of-range years, month 0 and impossible day/month pairs are rejected."""
     assert not validate_birth_date(raw).validated
 
 
 def test_birth_date_swapped_month_and_day_is_repaired():
+    """A month/day swap that becomes a real date is repaired."""
     outcome = validate_birth_date("1399/13/01")
     assert outcome.validated
     assert outcome.value == "1399/01/13"
@@ -85,18 +94,21 @@ def test_birth_date_swapped_month_and_day_is_repaired():
 
 @pytest.mark.parametrize(("raw", "expected"), [("زن", "زن"), ("زن ", "زن"), ("مرد", "مرد"), ("مردم", "مرد")])
 def test_gender(raw, expected):
+    """زن/مرد are accepted with surrounding noise."""
     outcome = validate_gender(raw)
     assert outcome.validated
     assert outcome.value == expected
 
 
 def test_serial_needs_digits():
+    """A serial must contain digits; Arabic letters are rejected."""
     assert validate_serial("1132612").validated
     assert not validate_serial("").validated
     assert not validate_serial("الف").validated
 
 
 def test_name_validator_uses_lexicon():
+    """A real surname is validated *through* the lexicon."""
     validator = make_name_validator("last")
     outcome = validator("محمدی")
     assert outcome.validated
@@ -104,4 +116,5 @@ def test_name_validator_uses_lexicon():
 
 
 def test_name_validator_rejects_latin():
+    """A Latin name is rejected as invalid Persian text."""
     assert not make_name_validator("first")("John").validated

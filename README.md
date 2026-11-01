@@ -91,6 +91,31 @@ How to read it:
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
 Persian `message`, so an application can decide to auto-accept or ask a human.
 
+### Accuracy per field and overall — in the UI and in code
+
+The measurement lives in the package, not in a notebook: [`nidocr/accuracy.py`](nidocr/accuracy.py)
+is the single implementation used by the UI, the CLI and `scripts/benchmark.py`, so
+the number in a report and the number on screen can never drift apart.
+
+```python
+from nidocr.accuracy import evaluate, load_dataset, run_synthetic, estimate_card
+
+report = run_synthetic(count=10, difficulty="clean")        # renders + reads + scores
+print(report.exact, report.characters, [r.as_row() for r in report.fields])
+report.to_markdown(title="nightly")                          # -> reports/…md
+```
+
+The Streamlit app shows accuracy in two honest flavours:
+
+| | where | what you get |
+|---|---|---|
+| **اندازه‌گیری‌شده** (measured) | «📊 سنجش دقت مدل» expander | real exact-match + character accuracy **per field and overall**, on synthetic cards (any difficulty/seed/count) or on your own folder of image + ground-truth JSON; downloadable as Markdown/JSON, with the list of actual misreads |
+| **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
+| **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
+
+Nothing is inflated: the measured panel reports 92.9 % / 97.8 % on clean renders and
+75.2 % / 85.0 % on photo-style cards — the numbers in the table above.
+
 ---
 
 ## How it works
@@ -189,8 +214,15 @@ nidocr ui                     # http://localhost:8501
   confidence bar, a validator badge («معتبر» / «اصلاح‌شده» / «بازبینی») and the raw
   OCR string underneath.
 * Tabs: **JSON** (downloadable), **تحلیل اطمینان** (confidence bars + image-quality
-  advice), **ناحیه‌های فیلد** (per-field ROI crops), **دقت** (compare a value against
-  ground truth and get the character accuracy).
+  advice), **ناحیه‌های فیلد** (per-field ROI crops) and **دقت این کارت** — per-field +
+  overall accuracy, estimated from the card itself or measured against values you type.
+* **📊 سنجش دقت مدل** (expandable panel above the uploader): measure the model on
+  N synthetic cards (`clean` / `photo` / `hard`, any seed) or on your own annotated
+  folder, with a progress bar, per-field table, bar chart, misread list and
+  Markdown/JSON download. The sidebar's «شرایط تصویر» controls the assumption used
+  by the per-card estimate.
+* The demo card survives reruns, so you can switch tabs and submit the accuracy form
+  without losing the result.
 * The card is shown with the detected boxes overlaid; the preprocessing result is
   available in an expander.
 
@@ -381,13 +413,14 @@ nidocr/
   fields/         definitions (7 fields), validators (mod-11, Jalali, names), lexicon
   synthetic/      card renderer + random Persian identities (used for training/benchmarks)
   pipeline.py     the orchestrator: prepare → detect → read → validate → rank
+  accuracy.py     measured (per field + overall) and estimated accuracy, shared by UI/CLI/bench
   cli.py, schemas.py, config.py, metrics.py, errors.py, image_io.py
   templates/      national_card_front.json, national_card_back.json
 data/lexicon/     first_names.txt, last_names.txt
 models/           tessdata/ + persian_digits.npz
 scripts/          benchmark, generate_synthetic_cards, train_digit_model,
                   build_name_lexicon, calibrate_template, fetch_models
-tests/            71 tests (unit + API + end-to-end on a rendered card)
+tests/            85 tests (unit + API + end-to-end on a rendered card + accuracy)
 reports/          measured benchmark + digit-model reports
 ```
 
@@ -396,14 +429,19 @@ reports/          measured benchmark + digit-model reports
 ## Tests
 
 ```bash
-pytest                     # 71 tests, ~11 s
+pytest                     # 85 tests, ~21 s
 ruff check .               # style (optional)
 ```
 
 The suite covers Persian normalisation, every validator (including the *unique-repair*
 rule and Jalali edge cases), the lexicon's precision guarantees, card detection and
 warping, ROI refinement, the digit reader, the whole pipeline on a rendered card
-(`≥ 6/7` fields exact) and the HTTP contract of the API (routes, errors, OpenAPI).
+(`≥ 6/7` fields exact), the accuracy layer (measured per field + overall, the estimate's
+bounds and its difficulty ordering) and the HTTP contract of the API (routes, errors,
+OpenAPI).
+
+Every module, class and function — 409 of them, tests and scripts included — carries a
+docstring; `python -m pytest` and `ruff check .` are both clean.
 
 ---
 

@@ -14,11 +14,13 @@ from nidocr.vision.layout import load_template
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:
+    """Pipeline settings with the OCR cache disabled, so every test really runs Tesseract."""
     return Settings(cache_ocr=False)
 
 
 @pytest.fixture(scope="session")
 def card_template():
+    """The shipped front template, shared by the synthetic-card fixtures."""
     return load_template("national_card_front")
 
 
@@ -32,6 +34,7 @@ def sample_card(card_template):
 
 @pytest.fixture(scope="session")
 def sample_card_file(tmp_path_factory, sample_card) -> tuple[Path, dict]:
+    """The same rendered card written to disk next to a ground-truth JSON file."""
     image, fields = sample_card
     directory = tmp_path_factory.mktemp("cards")
     path = directory / "card.png"
@@ -44,6 +47,7 @@ def sample_card_file(tmp_path_factory, sample_card) -> tuple[Path, dict]:
 
 @pytest.fixture(scope="session")
 def ocr(settings):
+    """One ``NationalCardOCR`` instance reused by the end-to-end tests (engine start-up is slow)."""
     from nidocr.pipeline import NationalCardOCR
 
     return NationalCardOCR(settings)

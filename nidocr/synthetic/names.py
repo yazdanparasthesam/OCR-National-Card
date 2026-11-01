@@ -30,4 +30,5 @@ CITIES = ["تهران", "مشهد", "اصفهان", "شیراز", "تبریز", 
 
 
 def all_first_names() -> list[str]:
+    """Every first name of the built-in synthetic pool (used by the renderer and tests)."""
     return MALE_FIRST_NAMES + FEMALE_FIRST_NAMES

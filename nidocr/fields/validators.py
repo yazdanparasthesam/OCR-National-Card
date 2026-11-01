@@ -47,6 +47,7 @@ class FieldOutcome:
 
     @property
     def message(self) -> str:
+        """Human readable Persian explanation of the outcome (the API returns it verbatim)."""
         return "؛ ".join(self.messages)
 
 
@@ -74,6 +75,7 @@ def is_valid_national_code(code: str) -> bool:
 
 
 def _substitutions(digits: str) -> list[str]:
+    """All strings obtained by replacing exactly one digit (used for unique-repair search)."""
     candidates: list[str] = []
     for index, original in enumerate(digits):
         for digit in "0123456789":
@@ -83,6 +85,7 @@ def _substitutions(digits: str) -> list[str]:
 
 
 def _insertions(digits: str) -> list[str]:
+    """All strings obtained by inserting one digit at any position (a lost glyph)."""
     candidates: list[str] = []
     for index in range(len(digits) + 1):
         for digit in "0123456789":
@@ -91,6 +94,7 @@ def _insertions(digits: str) -> list[str]:
 
 
 def _deletions(digits: str) -> list[str]:
+    """All strings obtained by deleting one digit (a spurious segmented glyph)."""
     return [f"{digits[:index]}{digits[index + 1:]}" for index in range(len(digits))]
 
 
@@ -166,6 +170,7 @@ def is_jalali_leap(year: int) -> bool:
 
 
 def jalali_month_days(year: int, month: int) -> int:
+    """Number of days of a Jalali month (1–6 → 31, 7–11 → 30, 12 → 29/30 by leap rule)."""
     if month <= 6:
         return 31
     if month <= 11:
@@ -174,6 +179,7 @@ def jalali_month_days(year: int, month: int) -> int:
 
 
 def is_valid_jalali_date(year: int, month: int, day: int) -> bool:
+    """True when the year/month/day triple is a real Jalali date inside the birth-year window."""
     settings = get_settings()
     if not (settings.birth_year_min <= year <= settings.birth_year_max):
         return False
@@ -240,6 +246,7 @@ _SERIAL_ALLOWED = re.compile(r"[^0-9A-Za-z]")
 
 
 def normalize_serial(raw: str) -> str:
+    """Normalise a serial number: ASCII digits, upper-case Latin letters, no separators."""
     value = to_ascii_digits(normalize_persian(raw))
     value = _SERIAL_ALLOWED.sub("", value)
     # drop a leading label artefact such as "IR"
@@ -247,6 +254,7 @@ def normalize_serial(raw: str) -> str:
 
 
 def validate_serial(raw: str) -> FieldOutcome:
+    """Validate a card serial (digits/Latin, 5–14 characters) and report the cleaned value."""
     value = normalize_serial(raw)
     digits = sum(char.isdigit() for char in value)
     if not value:
@@ -265,6 +273,7 @@ _NAME_MAX = 45
 
 
 def normalize_name(raw: str) -> str:
+    """Clean a Persian name: fold code points, drop punctuation, collapse spaces, cap words."""
     value = normalize_persian(raw)
     value = _NAME_DROP.sub(" ", value)
     value = collapse_spaces(value.replace("  ", " "))
@@ -342,6 +351,7 @@ _GENDER_MAP = {
 
 
 def validate_gender(raw: str) -> FieldOutcome:
+    """Validate the gender field (زن / مرد), tolerating trailing letters and spacing."""
     value = normalize_persian(raw).replace(ZWNJ, "").strip(" .:،؛")
     key = value.lower()
     if key in _GENDER_MAP:
@@ -363,6 +373,7 @@ def make_name_validator(kind: str):
     """Build a name finaliser bound to a lexicon kind (``first`` / ``last``)."""
 
     def _validate(raw: str, *, required: bool = True) -> FieldOutcome:
+        """Finalise one name reading with the lexicon kind the field is bound to."""
         return validate_name(raw, required=required, kind=kind)
 
     _validate.__name__ = f"validate_{kind}_name"
@@ -370,6 +381,7 @@ def make_name_validator(kind: str):
 
 
 def clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    """Clamp a score to the 0..1 range used by :class:`FieldOutcome`."""
     return max(low, min(high, value))
 
 
