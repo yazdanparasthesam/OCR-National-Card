@@ -1,0 +1,12 @@
+# Runtime dependencies (API + UI + OCR core)
+numpy>=1.24
+opencv-python-headless>=4.8
+pillow>=10.0
+pytesseract>=0.3.10
+pydantic>=2.5
+pydantic-settings>=2.1
+fastapi>=0.110
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9
+streamlit>=1.35
+httpx>=0.26

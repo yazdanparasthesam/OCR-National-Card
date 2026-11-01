@@ -1,0 +1,54 @@
+{
+  "name": "national_card_front",
+  "title_fa": "کارت ملی هوشمند",
+  "title_en": "Iranian National Card — front side",
+  "canvas": { "width": 1012, "height": 638 },
+  "notes": [
+    "All boxes are normalised 0..1 (x, y, x1, y1) on the perspective-corrected canvas.",
+    "Values are right aligned because the card is RTL; the pipeline tightens every box onto the real ink.",
+    "Calibrate with `python scripts/calibrate_template.py --image card.jpg --template national_card_front`."
+  ],
+  "field_layout": {
+    "national_code": {
+      "label": [0.545, 0.088, 0.720, 0.128],
+      "value": [0.360, 0.138, 0.720, 0.200],
+      "align": "right"
+    },
+    "last_name": {
+      "label": [0.545, 0.208, 0.720, 0.248],
+      "value": [0.340, 0.258, 0.720, 0.316],
+      "align": "right"
+    },
+    "first_name": {
+      "label": [0.545, 0.328, 0.720, 0.368],
+      "value": [0.340, 0.378, 0.720, 0.436],
+      "align": "right"
+    },
+    "father_name": {
+      "label": [0.545, 0.448, 0.720, 0.488],
+      "value": [0.340, 0.498, 0.720, 0.556],
+      "align": "right"
+    },
+    "birth_date": {
+      "label": [0.545, 0.568, 0.720, 0.608],
+      "value": [0.400, 0.618, 0.720, 0.672],
+      "align": "right"
+    },
+    "serial_number": {
+      "label": [0.545, 0.688, 0.720, 0.728],
+      "value": [0.400, 0.738, 0.720, 0.792],
+      "align": "right"
+    },
+    "gender": {
+      "label": [0.610, 0.812, 0.720, 0.845],
+      "value": [0.545, 0.852, 0.720, 0.905],
+      "align": "right"
+    }
+  },
+  "decorations": {
+    "photo": [0.748, 0.095, 0.945, 0.720],
+    "emblem": [0.040, 0.780, 0.150, 0.950],
+    "title": [0.600, 0.020, 0.735, 0.072],
+    "footer": [0.040, 0.060, 0.260, 0.110]
+  }
+}
