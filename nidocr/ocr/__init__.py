@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from nidocr.ocr.tesseract_engine import (
+    OCRLine,
+    OCRResult,
+    TesseractEngine,
+    TextToken,
+    get_engine,
+)
 from nidocr.ocr.text import (
     clean_ocr_text,
     collapse_spaces,
@@ -13,13 +20,6 @@ from nidocr.ocr.text import (
     persian_ratio,
     to_ascii_digits,
     to_persian_digits,
-)
-from nidocr.ocr.tesseract_engine import (
-    OCRLine,
-    OCRResult,
-    TesseractEngine,
-    TextToken,
-    get_engine,
 )
 
 __all__ = [

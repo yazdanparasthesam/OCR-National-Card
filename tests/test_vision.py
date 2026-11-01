@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
-import pytest
 
 from nidocr.vision.annotate import data_uri, draw_overlay, encode_jpeg_base64, encode_png_base64, field_color
 from nidocr.vision.card_detector import detect_card, order_quad, warp_card

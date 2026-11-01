@@ -21,7 +21,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from nidocr.config import PROJECT_ROOT, get_settings
-from nidocr.ocr.text import normalize_for_compare, normalize_persian, ZWNJ
+from nidocr.ocr.text import ZWNJ, normalize_for_compare, normalize_persian
 
 DEFAULT_LEXICON_DIR = PROJECT_ROOT / "data" / "lexicon"
 KINDS = ("first", "last")

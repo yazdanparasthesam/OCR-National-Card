@@ -6,7 +6,7 @@ from fastapi import APIRouter, Form, HTTPException
 
 from nidocr.api.deps import Pipeline, UploadFileDep, decode, read_upload
 from nidocr.errors import FieldNotFoundError
-from nidocr.fields.definitions import FIELD_SPECS, get_field_spec
+from nidocr.fields.definitions import get_field_spec
 from nidocr.schemas import FieldInfo, FieldOnlyResult
 
 router = APIRouter(prefix="/fields", tags=["fields"])

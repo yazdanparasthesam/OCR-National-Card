@@ -14,10 +14,9 @@ import numpy as np
 
 from nidocr.config import Settings, get_settings
 from nidocr.errors import NIDOCRError
-from nidocr.fields.definitions import FIELD_ORDER, FIELD_SPECS, FieldSpec, resolve_fields
+from nidocr.fields.definitions import DIGIT_WHITELIST, FIELD_ORDER, FIELD_SPECS, FieldSpec, resolve_fields
 from nidocr.fields.validators import FieldOutcome
 from nidocr.image_io import load_image
-from nidocr.fields.definitions import DIGIT_WHITELIST
 from nidocr.ocr.digit_reader import read_digit_glyphs
 from nidocr.ocr.label_anchor import Anchor, detect_anchors
 from nidocr.ocr.tesseract_engine import OCRResult, TesseractEngine

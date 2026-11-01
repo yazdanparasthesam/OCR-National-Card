@@ -10,9 +10,8 @@ accuracy benchmark and the test-suite compare against.
 
 from __future__ import annotations
 
-import zlib
-
 import json
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 

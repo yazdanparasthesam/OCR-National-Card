@@ -41,7 +41,7 @@ def draw_overlay(
         cv2.rectangle(overlay, (x0, y0), (x1, y1), color, cv2.FILLED)
         cv2.rectangle(card, (x0, y0), (x1, y1), color, thickness, lineType=cv2.LINE_AA)
     blended = cv2.addWeighted(overlay, alpha, card, 1 - alpha, 0)
-    for key, (x0, y0, x1, y1) in boxes.items():
+    for key, (x0, y0, _x1, _y1) in boxes.items():
         text = labels.get(key)
         if not text:
             continue

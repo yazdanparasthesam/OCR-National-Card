@@ -21,7 +21,6 @@ Design notes
 from __future__ import annotations
 
 import base64
-import io
 import json
 import sys
 import time
@@ -37,7 +36,7 @@ if str(PROJECT_ROOT) not in sys.path:  # allow `streamlit run nidocr/ui/app.py`
 from nidocr import __version__  # noqa: E402
 from nidocr.fields.definitions import FIELD_SPECS  # noqa: E402
 from nidocr.fields.lexicon import lexicon_status  # noqa: E402
-from nidocr.image_io import load_image, save_image  # noqa: E402
+from nidocr.image_io import load_image  # noqa: E402
 from nidocr.metrics import character_accuracy  # noqa: E402
 from nidocr.ocr.text import to_persian_digits  # noqa: E402
 from nidocr.pipeline import get_ocr  # noqa: E402
@@ -231,7 +230,7 @@ def pipeline(template: str, upscale: float, passes: int, anchors: bool):
 @st.cache_data(show_spinner=False)
 def demo_card(seed: int) -> bytes:
     """Render a synthetic card so the UI can be tried without any upload."""
-    from nidocr.synthetic.renderer import render_card, random_spec
+    from nidocr.synthetic.renderer import random_spec, render_card
 
     layout = load_template("national_card_front")
     image = render_card(random_spec(seed), layout)
@@ -332,12 +331,12 @@ def render_result(result, source_image: np.ndarray | None, debug: bool, key_pref
         if payload is None and source_image is not None:
             payload = image_to_png_bytes(source_image)
         if payload:
-            st.image(payload, use_container_width=True)
+            st.image(payload, width="stretch")
         if debug and result.processed_png:
             with st.expander("تصویر پردازش‌شده (پیش‌پردازش)"):
                 processed = b64_image(result.processed_png)
                 if processed:
-                    st.image(processed, use_container_width=True)
+                    st.image(processed, width="stretch")
     with right:
         st.markdown("#### 🧾 متن استخراج‌شده")
         for field in fields:
@@ -381,10 +380,10 @@ def render_result(result, source_image: np.ndarray | None, debug: bool, key_pref
             st.info("برای دیدن ناحیه‌ها، گزینهٔ «تصاویر عیب‌یابی» را روشن کنید.")
         for chunk_start in range(0, len(rows), 4):
             cols = st.columns(4, gap="small")
-            for column, field in zip(cols, rows[chunk_start : chunk_start + 4]):
+            for column, field in zip(cols, rows[chunk_start : chunk_start + 4], strict=False):
                 with column:
                     st.caption(f"{field.label_fa} · {field.confidence:.0f}٪")
-                    st.image(b64_image(field.roi_png), use_container_width=True)
+                    st.image(b64_image(field.roi_png), width="stretch")
     with tabs[3]:
         st.markdown(
             "برای سنجش دقت روی یک مجموعهٔ برچسب‌خورده از `scripts/benchmark.py` استفاده کنید:\n\n"
@@ -436,7 +435,7 @@ def main() -> None:
         st.markdown("#### بدون تصویر؟")
         st.caption("یک کارت نمونهٔ ساختگی بسازید و مسیر کامل را آزمایش کنید.")
         seed = st.number_input("بذر نمونه", 1, 9999, 7, step=1)
-        make_demo = st.button("ساخت کارت نمونه", use_container_width=True)
+        make_demo = st.button("ساخت کارت نمونه", width="stretch")
 
     payload = None
     filename = "card"
@@ -455,7 +454,7 @@ def main() -> None:
         st.stop()
 
     image = load_image(payload)
-    st.image(image, caption=f"{filename} · {image.shape[1]}×{image.shape[0]}", use_container_width=True)
+    st.image(image, caption=f"{filename} · {image.shape[1]}×{image.shape[0]}", width="stretch")
 
     with st.spinner("در حال خواندن کارت…"):
         started = time.perf_counter()

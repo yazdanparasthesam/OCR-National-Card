@@ -21,13 +21,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import numpy as np  # noqa: E402
 
 from nidocr.config import PROJECT_ROOT, get_settings  # noqa: E402
 from nidocr.fields.definitions import FIELD_SPECS  # noqa: E402
 from nidocr.ocr.tesseract_engine import get_engine  # noqa: E402
-from nidocr.vision.card_detector import detect_card, warp_card  # noqa: E402
 from nidocr.vision.binarize import otsu  # noqa: E402
+from nidocr.vision.card_detector import detect_card, warp_card  # noqa: E402
 from nidocr.vision.enhance import enhance_gray, to_gray  # noqa: E402
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
