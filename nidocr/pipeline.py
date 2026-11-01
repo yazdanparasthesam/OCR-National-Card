@@ -79,6 +79,9 @@ Measured on 30 degraded photos: 44 px alone reads 18/30 birth dates, 70 px alone
 and asking both and keeping the more confident reading reads 23/30 — the two heights fail
 on different cards, so the tie-break has to be confidence, not a fixed scale."""
 
+FALLBACK_TEMPLATE = "national_card_front"
+"""Template used when neither the requested name nor the configured default exists."""
+
 TEMPLATE_PHOTO_MARGIN = 0.06
 
 #: A card narrower than this (in source pixels) is supersampled before reading:
@@ -224,7 +227,9 @@ class NationalCardOCR:
             except NIDOCRError:
                 anchors = {}
         layout = (
-            self.template(self._detect_template(variants)) if auto else self._resolve_layout(requested)
+            self._resolve_layout(self._detect_template(variants))
+            if auto
+            else self._resolve_layout(requested)
         )
         gray_for_ocr = variants["enhanced"]
 
@@ -705,7 +710,16 @@ class NationalCardOCR:
         try:
             return self.template(requested)
         except TemplateNotFoundError:
-            return self.template(self.settings.default_template)
+            # the configured default can itself be "auto" (that is the UI's default), so
+            # the fallback must resolve to a *loaded* template, never to the word "auto"
+            for candidate in (str(self.settings.default_template), FALLBACK_TEMPLATE):
+                if not candidate or candidate.lower() == "auto":
+                    continue
+                try:
+                    return self.template(candidate)
+                except TemplateNotFoundError:
+                    continue
+            return self.template(available_templates()[0])
 
     def _detect_template(self, variants: dict[str, np.ndarray]) -> str:
         """Pick the card design from *where the ID photo sits* — no OCR involved.

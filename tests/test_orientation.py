@@ -173,3 +173,19 @@ def test_smart_template_defines_expiry_and_omits_serial():
         "father_name",
         "expiry_date",
     }
+
+
+def test_the_auto_default_survives_a_bogus_template_name():
+    """A bad template name never raises when the configured default is itself 'auto'.
+
+    That combination crashed the Streamlit page: the unknown name fell back to
+    ``default_template``, which was the word "auto", which is not a template file.
+    """
+    from nidocr.config import Settings
+    from nidocr.pipeline import get_ocr
+    from nidocr.synthetic.renderer import random_spec, render_card
+
+    engine = get_ocr(Settings(default_template="auto", use_label_anchors=False))
+    image = render_card(random_spec(31), load_template("national_card_front"))
+    assert engine.extract(image, template="does_not_exist").template == "national_card_front"
+    assert engine.extract(image, template="auto").template == "national_card_front"
