@@ -38,9 +38,12 @@ from nidocr.schemas import (
 from nidocr.vision.annotate import draw_overlay, encode_jpeg_base64, encode_png_base64, field_color
 from nidocr.vision.card_detector import CardDetection, detect_card, estimate_quality, warp_card
 from nidocr.vision.enhance import (
+    LINE_TARGET_HEIGHT,
     card_variants,
     crop_with_padding,
     field_variants,
+    fit_line,
+    normalize_background,
     resize_to_max_side,
     unsharp,
     upscale,
@@ -57,6 +60,16 @@ from nidocr.vision.orient import best_rotation, looks_rotated, rotate, upright
 
 #: How much darker one candidate template's photo region must be before ``auto``
 #: trusts it: below this the two designs are indistinguishable and the default wins.
+GLYPH_UPSCALE = 1.5
+"""Magnification the glyph reader applies to an already normalised line."""
+
+GLYPH_TALL_FACTOR = 1.6
+"""Second line height for dates, relative to :data:`nidocr.vision.enhance.LINE_TARGET_HEIGHT`.
+
+Measured on 30 degraded photos: 44 px alone reads 18/30 birth dates, 70 px alone 19/30,
+and asking both and keeping the more confident reading reads 23/30 — the two heights fail
+on different cards, so the tie-break has to be confidence, not a fixed scale."""
+
 TEMPLATE_PHOTO_MARGIN = 0.06
 
 #: A card narrower than this (in source pixels) is supersampled before reading:
@@ -720,14 +733,18 @@ class NationalCardOCR:
             return default
         return best_name
 
-    def _field_upscale(self, prepared: PreparedCard) -> float:
-        """ROI upscale that keeps the *total* magnification at ``settings.upscale``.
+    @staticmethod
+    def _glyph_line(roi_gray: np.ndarray, *, height_factor: float = 1.0) -> np.ndarray:
+        """Prepare a numeric ROI for the glyph reader: flatten, then normalise the height.
 
-        When the canvas was already supersampled (small photo) the ROI needs less
-        enlargement, otherwise the glyphs become so large that Tesseract's line
-        segmenter gives up on them.
+        Both steps matter on a real card. The pattern behind the digits survives a
+        binarisation and connects the glyphs into one blob (a ten-digit row then reads
+        as three glyphs), and a line taller than ~60 px loses digits at its ends. On a
+        flattened, 44-px line the same row yields every digit plus the two separators.
+        ``height_factor`` builds the taller variant used as a second opinion.
         """
-        return max(1.5, float(self.settings.upscale) / max(prepared.scale, 1.0)) * prepared.upscale_boost
+        target = int(round(LINE_TARGET_HEIGHT * height_factor))
+        return fit_line(normalize_background(roi_gray), target_height=target)
 
     def _vote_text_variants(
         self,
@@ -791,18 +808,35 @@ class NationalCardOCR:
             if roi_gray.size == 0:
                 continue
 
-            # 1) numeric fields: glyph-by-glyph reader (far more accurate for digits)
+            # 1) numeric fields: glyph-by-glyph reader (far more accurate for digits).
+            #    The reader segments digits by column projection, so any guilloche that
+            #    survives binarisation connects the glyphs into one blob: flattening the
+            #    ROI background first is what makes a real card's date row readable.
             if spec.kind in GLYPH_KINDS and whitelist:
                 best = self._read_glyph_candidates(
-                    roi_gray,
+                    self._glyph_line(roi_gray),
                     spec,
                     whitelist,
                     source_name,
                     refined,
                     candidates,
                     best,
-                    upscale_factor=self._field_upscale(prepared),
+                    upscale_factor=GLYPH_UPSCALE,
                 )
+                if spec.kind == "date":
+                    # two line heights disagree on different cards (blur vs. resolution),
+                    # and either one can be calendar-valid while still wrong, so the
+                    # taller reading is always asked and the vote decides on confidence
+                    best = self._read_glyph_candidates(
+                        self._glyph_line(roi_gray, height_factor=GLYPH_TALL_FACTOR),
+                        spec,
+                        whitelist,
+                        source_name,
+                        refined,
+                        candidates,
+                        best,
+                        upscale_factor=GLYPH_UPSCALE,
+                    )
                 if best is not None and best[2].validated and best[2].score >= 0.99:
                     break  # validated by a checksum/calendar rule: no need for more passes
 
@@ -824,7 +858,7 @@ class NationalCardOCR:
                     continue
                 before = best[0] if best is not None else None
                 best = self._read_glyph_candidates(
-                    roi_gray,
+                    self._glyph_line(roi_gray),
                     spec,
                     whitelist,
                     source_name,
@@ -832,7 +866,7 @@ class NationalCardOCR:
                     candidates,
                     best,
                     second_opinion=True,
-                    upscale_factor=self._field_upscale(prepared),
+                    upscale_factor=GLYPH_UPSCALE,
                 )
                 if before is not None and best is not None and best[0] == before:
                     continue

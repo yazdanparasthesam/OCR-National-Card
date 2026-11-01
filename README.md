@@ -62,14 +62,14 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
-| `national_code` | **100.0 %** | 100.0 % | 90.0 % | 94.0 % |
+| `national_code` | **100.0 %** | 100.0 % | 90.0 % | 94.7 % |
 | `last_name` | **100.0 %** | 100.0 % | 80.0 % | 82.0 % |
 | `first_name` | 93.3 % | 98.3 % | 83.3 % | 88.3 % |
 | `father_name` | 93.3 % | 98.6 % | 86.7 % | 86.7 % |
-| `birth_date` | 83.3 % | 97.0 % | 73.3 % | 87.7 % |
-| `serial_number` | 93.3 % | 98.6 % | 66.7 % | 74.2 % |
+| `birth_date` | 83.3 % | 97.3 % | 73.3 % | 88.0 % |
+| `serial_number` | 96.7 % | 99.0 % | 73.3 % | 78.7 % |
 | `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
-| **overall** | **94.8 %** | **98.9 %** | **79.5 %** | **84.2 %** |
+| **overall** | **95.2 %** | **99.1 %** | **80.5 %** | **85.0 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -85,7 +85,7 @@ How to read it:
   and glare in the benchmark): 79 % of cards come out perfect, 85 % of characters
   right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
-* Latency: **1.6–2.0 s per card** on CPU (single Tesseract binary, 8–14 subprocess
+* Latency: **1.4–1.8 s per card** on CPU (single Tesseract binary, 8–14 subprocess
   calls per card; the UI and API reuse a warm process-wide pipeline).
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
@@ -113,8 +113,8 @@ The Streamlit app shows accuracy in two honest flavours:
 | **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
-Nothing is inflated: the measured panel reports 94.8 % / 98.9 % on clean renders and
-79.5 % / 84.2 % on photo-style cards — the numbers in the table above.
+Nothing is inflated: the measured panel reports 95.2 % / 99.1 % on clean renders and
+80.5 % / 85.0 % on photo-style cards — the numbers in the table above.
 
 ### Rotated and mirrored photos
 
@@ -133,6 +133,26 @@ a card lying upside down. Two things make that work:
 Small photos are supersampled before reading (a 470-px card stretched to 1012 px loses
 exactly the stroke information digit segmentation needs), with a second read at full
 magnification when the first one comes back weak.
+
+### Numeric fields are read glyph by glyph — on a flattened line
+
+Tesseract's Persian model is weak on *runs* of digits (it prefers letter sequences), so
+numeric fields are segmented by column projection and read one glyph at a time with a
+digit whitelist. That only works when the segmentation is clean, and on a real card it
+is not: the guilloche behind the digits survives binarisation and glues the row into a
+single blob, and a line taller than ~60 px loses the digits at its ends. A ten-digit
+national code was arriving as three glyphs.
+
+``pipeline._glyph_line`` therefore flattens the ROI background and normalises it to the
+same canonical height as every other field before segmentation.
+
+A second real-card trap is the ``/`` of a date: it is a thin diagonal that the
+classifier calls a ``۸``. The row then carries two glyphs too many, the groups are not
+4/2/2 and the calendar validator never sees a date at all. ``digit_reader`` re-labels
+the two least confident glyphs as separators, offers the resulting ``YYYY/MM/DD``
+strings to the validator, and dates keep a second line height (1.6×) as a second
+opinion — on 30 degraded photos the two heights read 18/30 and 19/30 birth dates
+alone but 23/30 together, because they fail on different cards.
 
 ### Why line height is normalised
 
@@ -468,7 +488,7 @@ data/lexicon/     first_names.txt, last_names.txt
 models/           tessdata/ + persian_digits.npz
 scripts/          benchmark, generate_synthetic_cards, train_digit_model,
                   build_name_lexicon, calibrate_template, fetch_models
-tests/            100 tests (unit + API + end-to-end on a rendered card + accuracy)
+tests/            106 tests (unit + API + end-to-end on a rendered card + accuracy)
 reports/          measured benchmark + digit-model reports
 ```
 
@@ -477,7 +497,7 @@ reports/          measured benchmark + digit-model reports
 ## Tests
 
 ```bash
-pytest                     # 100 tests, ~32 s
+pytest                     # 106 tests, ~34 s
 ruff check .               # style (optional)
 ```
 

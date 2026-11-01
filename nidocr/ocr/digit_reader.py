@@ -364,7 +364,11 @@ def read_digit_glyphs(
     if separator and expected_digits:
         # a date is 8 digits in 4/2/2 groups; knowing that repairs the extra
         # glyphs that segmentation adds next to a glyph with a long tail
-        alternatives = _date_group_alternatives(glyphs, separator=separator) + alternatives
+        alternatives = (
+            _separator_alternatives(glyphs, separator=separator, limits=_date_limits(expected_digits))
+            + _date_group_alternatives(glyphs, separator=separator)
+            + alternatives
+        )
     return GlyphReading(
         text=text,
         confidence=confidence,
@@ -477,6 +481,54 @@ def _combination_alternatives(
         if text not in alternatives:
             alternatives.append(text)
     return alternatives
+
+
+def _date_limits(expected_digits: int) -> tuple[int, int, int]:
+    """Group sizes of a date field: ``(4, 2, 2)`` for ``YYYYMMDD``, otherwise even thirds."""
+    if expected_digits == 8:
+        return (4, 2, 2)
+    return (expected_digits, 0, 0)
+
+
+def _separator_alternatives(
+    glyphs: list[Glyph],
+    *,
+    separator: str = "/",
+    limits: tuple[int, int, int] = (4, 2, 2),
+    pool: int = 6,
+    limit: int = 24,
+) -> list[str]:
+    """Strings where two doubtful glyphs are treated as the *date separators*.
+
+    The ``/`` of a real card is a thin diagonal that the classifier happily calls a
+    ``۸`` (it has the same silhouette as the diagonal stroke of that digit).  The
+    reading then has two glyphs too many and no group of 4/2/2, so the calendar
+    validator can never see a date.  Instead of guessing from geometry, the two least
+    confident glyphs of a few candidates are re-labelled as separators and the resulting
+    ``YYYY/MM/DD`` strings are handed to the validator, which is the real oracle.
+    """
+    expected = sum(limits)
+    if len(glyphs) != expected + 2 or min(limits) <= 0:
+        return []
+    values = [glyph.value for glyph in glyphs]
+    ranked = sorted(range(len(glyphs)), key=lambda index: glyphs[index].confidence)
+    candidates = sorted(ranked[:pool])
+    strings: list[str] = []
+    for first, second in itertools.combinations(candidates, 2):
+        if second - first < 2:
+            continue
+        parts: list[str] = []
+        current: list[str] = []
+        for index, value in enumerate(values):
+            if index in (first, second):
+                parts.append("".join(current))
+                current = []
+            else:
+                current.append(value)
+        parts.append("".join(current))
+        if [len(part) for part in parts] == list(limits):
+            strings.append(separator.join(parts))
+    return strings[:limit]
 
 
 def _date_group_alternatives(
