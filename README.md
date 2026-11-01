@@ -63,13 +63,13 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
 | `national_code` | **100.0 %** | 100.0 % | 90.0 % | 94.7 % |
-| `last_name` | **100.0 %** | 100.0 % | 80.0 % | 82.0 % |
-| `first_name` | 93.3 % | 98.3 % | 83.3 % | 88.3 % |
-| `father_name` | 93.3 % | 98.6 % | 86.7 % | 86.7 % |
+| `last_name` | **100.0 %** | 100.0 % | 83.3 % | 84.7 % |
+| `first_name` | 93.3 % | 97.5 % | 76.7 % | 85.1 % |
+| `father_name` | 90.0 % | 97.8 % | 86.7 % | 86.7 % |
 | `birth_date` | 83.3 % | 97.3 % | 73.3 % | 88.0 % |
 | `serial_number` | 96.7 % | 99.0 % | 73.3 % | 78.7 % |
 | `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
-| **overall** | **95.2 %** | **99.1 %** | **80.5 %** | **85.0 %** |
+| **overall** | **94.8 %** | **98.8 %** | **80.0 %** | **84.9 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -85,7 +85,7 @@ How to read it:
   and glare in the benchmark): 79 % of cards come out perfect, 85 % of characters
   right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
-* Latency: **1.4–1.8 s per card** on CPU (single Tesseract binary, 8–14 subprocess
+* Latency: **2.2–2.6 s per card** on CPU (single Tesseract binary, 8–14 subprocess
   calls per card; the UI and API reuse a warm process-wide pipeline).
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
@@ -113,8 +113,8 @@ The Streamlit app shows accuracy in two honest flavours:
 | **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
-Nothing is inflated: the measured panel reports 95.2 % / 99.1 % on clean renders and
-80.5 % / 85.0 % on photo-style cards — the numbers in the table above.
+Nothing is inflated: the measured panel reports 94.8 % / 98.8 % on clean renders and
+80.0 % / 84.9 % on photo-style cards — the numbers in the table above.
 
 ### Rotated and mirrored photos
 
@@ -133,6 +133,30 @@ a card lying upside down. Two things make that work:
 Small photos are supersampled before reading (a 470-px card stretched to 1012 px loses
 exactly the stroke information digit segmentation needs), with a second read at full
 magnification when the first one comes back weak.
+
+### Names are read character by character — the lexicon never rewrites them
+
+A word model is a bad judge of a *name*: tesseract's Persian dictionary and the bundled
+name lexicon both prefer words they have seen, and that is how a card's «شرجی» became
+«سرخی» — the pixels were right and the dictionary "corrected" them. The lexicon is now
+a confidence hint only: it can confirm a reading, never replace it.
+
+Name fields are read the way the numeric ones already were — character by character
+(`nidocr/ocr/char_reader.py`):
+
+* the line is split into ink components, with dots merged into the letter body they
+  belong to and a neighbouring mark (the colon of the label) dropped by ink mass,
+* Persian is cursive, so a component is a *group* of one to four joined letters; the
+  group is kept intact and read as a group instead of being cut at an arbitrary column,
+* the pieces are read right to left and simply concatenated — that is the writing order,
+* a bare vertical bar is decided by its shape (it is «ا»; this tesseract build answers
+  «۱» or nothing at all for a two-pixel-wide stroke, and a name holds no digits),
+* the crop keeps its black-on-white polarity and gets no white frame: both were measured
+  to be the difference between «حسین» and an empty string.
+
+The reconstruction competes with the whole-line readings in the same vote, and it can
+only take over a *validated* whole-line reading when it is clearly more confident **and**
+not shorter (a shorter reconstruction has dropped a component).
 
 ### Numeric fields are read glyph by glyph — on a flattened line
 
@@ -488,7 +512,7 @@ data/lexicon/     first_names.txt, last_names.txt
 models/           tessdata/ + persian_digits.npz
 scripts/          benchmark, generate_synthetic_cards, train_digit_model,
                   build_name_lexicon, calibrate_template, fetch_models
-tests/            106 tests (unit + API + end-to-end on a rendered card + accuracy)
+tests/            114 tests (unit + API + end-to-end on a rendered card + accuracy)
 reports/          measured benchmark + digit-model reports
 ```
 
@@ -497,7 +521,7 @@ reports/          measured benchmark + digit-model reports
 ## Tests
 
 ```bash
-pytest                     # 106 tests, ~34 s
+pytest                     # 114 tests, ~49 s
 ruff check .               # style (optional)
 ```
 

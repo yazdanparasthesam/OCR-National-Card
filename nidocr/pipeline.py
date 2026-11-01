@@ -17,6 +17,7 @@ from nidocr.errors import NIDOCRError, TemplateNotFoundError
 from nidocr.fields.definitions import DIGIT_WHITELIST, FIELD_ORDER, FIELD_SPECS, FieldSpec, resolve_fields
 from nidocr.fields.validators import FieldOutcome
 from nidocr.image_io import load_image
+from nidocr.ocr.char_reader import read_text_glyphs
 from nidocr.ocr.digit_reader import read_digit_glyphs
 from nidocr.ocr.label_anchor import Anchor, detect_anchors
 from nidocr.ocr.tesseract_engine import OCRResult, TesseractEngine
@@ -62,6 +63,14 @@ from nidocr.vision.orient import best_rotation, looks_rotated, rotate, upright
 #: trusts it: below this the two designs are indistinguishable and the default wins.
 GLYPH_UPSCALE = 1.5
 """Magnification the glyph reader applies to an already normalised line."""
+
+CHAR_CONFIDENCE_MARGIN = 2.0
+"""How much more confident the character reading must be to overrule a validated one.
+
+A whole-line reading that passed the field validator is strong evidence; the per
+character reconstruction is allowed to replace it only when it is clearly surer, so a
+confident fragment cannot steal a correct word.
+"""
 
 GLYPH_TALL_FACTOR = 1.6
 """Second line height for dates, relative to :data:`nidocr.vision.enhance.LINE_TARGET_HEIGHT`.
@@ -746,6 +755,49 @@ class NationalCardOCR:
         target = int(round(LINE_TARGET_HEIGHT * height_factor))
         return fit_line(normalize_background(roi_gray), target_height=target)
 
+    def _read_char_candidates(
+        self,
+        roi_gray: np.ndarray,
+        spec: FieldSpec,
+        source_name: str,
+        refined: Rect,
+        candidates: list[Candidate],
+        best: tuple[float, Candidate, FieldOutcome, Rect, float] | None,
+    ) -> tuple[float, Candidate, FieldOutcome, Rect, float] | None:
+        """Read a text ROI character by character and rank the reconstruction.
+
+        Persian is cursive, so a component is a *group* of joined letters; the reader
+        keeps the groups intact and concatenates them right to left, which is the writing
+        order. Nothing here consults a word list — the value is the strokes.
+        """
+        reading = read_text_glyphs(self.engine, roi_gray)
+        if not reading.text:
+            return best
+        outcome = spec.finalize(reading.text)
+        score = self._rank(outcome, reading.confidence, spec)
+        candidate = Candidate(
+            variant=reading.variant,
+            source=source_name,
+            text=outcome.value or reading.text,
+            confidence=round(reading.confidence, 1),
+            validated=outcome.validated,
+            score=round(score, 4),
+        )
+        candidates.append(candidate)
+        clearly_better = (
+            best is None
+            or not best[2].validated
+            or (
+                reading.confidence >= best[4] + CHAR_CONFIDENCE_MARGIN
+                # a reconstruction that is *shorter* than a validated word has almost
+                # certainly dropped a component («حسین» → «حسی»), so it cannot win
+                and len(reading.text) >= len(best[1].text)
+            )
+        )
+        if clearly_better and (best is None or score > best[0]):
+            best = (score, candidate, outcome, refined, reading.confidence)
+        return best
+
     def _vote_text_variants(
         self,
         variants: list[tuple[str, np.ndarray]],
@@ -845,6 +897,12 @@ class NationalCardOCR:
             # ~0.4 s but cost a photo point, and accuracy wins here.
             variants = field_variants(roi_gray, passes=self.settings.passes)
             best = self._vote_text_variants(variants, spec, source_name, candidates, refined, best)
+            if spec.kind == "text":
+                # 3) names: the same ROI read character by character and concatenated —
+                #    no lexicon, no word model, just the strokes in reading order
+                best = self._read_char_candidates(
+                    normalize_background(roi_gray), spec, source_name, refined, candidates, best
+                )
 
         if spec.kind in GLYPH_KINDS and whitelist and (best is None or not best[2].validated):
             # the checksum / calendar rejected every reading: ask a second reader

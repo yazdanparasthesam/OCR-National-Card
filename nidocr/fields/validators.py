@@ -333,24 +333,11 @@ def validate_name(raw: str, *, required: bool = True, kind: str = "any", use_lex
         from nidocr.fields.lexicon import get_lexicon
 
         lexicon = get_lexicon()
-        if lexicon.available(lexicon_kind):
-            stored = lexicon.canonical(value, lexicon_kind)
-            if stored is not None:
-                # keep the lexicon's spelling: OCR drops the madda of «آ»
-                return FieldOutcome(
-                    normalize_name(stored), length_ok, False, 1.0, ["نام در فرهنگ واژگان یافت شد"]
-                )
-            snapped, score = lexicon.snap(value, lexicon_kind)
-            if snapped and score >= LEXICON_SNAP_MIN:
-                # a snap is a *repair*, never a validation: the value is different from
-                # what was read, so it must stay visibly less certain than an exact hit
-                return FieldOutcome(
-                    normalize_name(snapped),
-                    False,
-                    True,
-                    0.55 + 0.3 * score,
-                    [f"با فرهنگ واژگان اصلاح شد ({score:.0%} تشابه)"],
-                )
+        if lexicon.available(lexicon_kind) and lexicon.canonical(value, lexicon_kind) is not None:
+            # the lexicon only *confirms* what the pixels produced; it never replaces a
+            # reading with a dictionary word (that silently rewrote a correct «شرجی»
+            # into «سرخی» on a real card)
+            return FieldOutcome(value, length_ok, False, 1.0, ["نام در فرهنگ واژگان یافت شد"])
     one_token = " " not in value
     messages: list[str] = []
     if not one_token:
