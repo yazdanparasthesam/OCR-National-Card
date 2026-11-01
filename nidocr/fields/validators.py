@@ -299,6 +299,13 @@ def validate_serial(raw: str) -> FieldOutcome:
 # ─────────────────────────────────────────────────────────────────────────────
 _NAME_DROP = re.compile(r"[^آ-یءأؤئ" + ZWNJ + r" ]+")
 _NAME_MAX = 45
+LEXICON_SNAP_MIN = 0.86
+"""Similarity a reading must reach before it is replaced by a lexicon entry.
+
+Lower values were tempting (a surname outside the lexicon looks like a typo) but they
+also rewrote *correct* reads: on the real card «شرجی» (0.75 similar to «سرخی») was
+silently replaced. 0.86 keeps the useful repairs (a dropped dot or a missing letter in
+long names) without inventing a different word for a short one."""
 
 
 def normalize_name(raw: str) -> str:
@@ -334,12 +341,14 @@ def validate_name(raw: str, *, required: bool = True, kind: str = "any", use_lex
                     normalize_name(stored), length_ok, False, 1.0, ["نام در فرهنگ واژگان یافت شد"]
                 )
             snapped, score = lexicon.snap(value, lexicon_kind)
-            if snapped and score >= 0.74:
+            if snapped and score >= LEXICON_SNAP_MIN:
+                # a snap is a *repair*, never a validation: the value is different from
+                # what was read, so it must stay visibly less certain than an exact hit
                 return FieldOutcome(
                     normalize_name(snapped),
+                    False,
                     True,
-                    True,
-                    0.9 + 0.09 * score,
+                    0.55 + 0.3 * score,
                     [f"با فرهنگ واژگان اصلاح شد ({score:.0%} تشابه)"],
                 )
     one_token = " " not in value

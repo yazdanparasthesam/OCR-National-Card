@@ -8,9 +8,13 @@ import numpy as np
 from nidocr.vision.annotate import data_uri, draw_overlay, encode_jpeg_base64, encode_png_base64, field_color
 from nidocr.vision.card_detector import detect_card, order_quad, warp_card
 from nidocr.vision.enhance import (
+    LINE_PAD,
+    LINE_TARGET_HEIGHT,
+    LINE_TARGET_HEIGHTS,
     crop_with_padding,
     enhance_gray,
     field_variants,
+    fit_line,
     normalize_background,
     to_gray,
 )
@@ -99,14 +103,30 @@ def test_enhance_pipeline_shapes():
     assert flattened.mean() > 100
 
 
-def test_field_variants_are_upscaled_and_binary():
-    """The three preprocessing variants are upscaled and (for two of them) binarised."""
+def test_field_variants_are_normalised_and_binary():
+    """Every variant is normalised, and both line heights are offered to the vote."""
     roi = np.full((40, 200), 240, np.uint8)
     cv2.putText(roi, "123456", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, 0, 2)
-    variants = field_variants(roi, upscale_factor=3.0, passes=3)
-    assert [name for name, _ in variants] == ["enhanced", "sauvola", "otsu"]
-    for _, image in variants:
-        assert image.shape[0] > roi.shape[0] * 2.5
+    variants = field_variants(roi, passes=3)
+    names = [name for name, _ in variants]
+    assert names == ["enhanced", "sauvola", "otsu", "enhanced_wide", "sauvola_wide", "otsu_wide"]
+    for index, (_, image) in enumerate(variants):
+        target = LINE_TARGET_HEIGHTS[index // 3] + 2 * LINE_PAD
+        assert abs(image.shape[0] - target) <= 2
+    # a single pass still produces one usable variant
+    assert [name for name, _ in field_variants(roi, passes=1)] == ["enhanced"]
+
+
+def test_fit_line_normalises_height_and_keeps_the_glyphs():
+    """A tall ROI is scaled down to the canonical height; an empty one is untouched."""
+    tall = np.full((120, 400), 245, np.uint8)
+    cv2.putText(tall, "1234", (40, 90), cv2.FONT_HERSHEY_SIMPLEX, 2.4, 10, 5)
+    fitted = fit_line(tall)
+    assert fitted.shape[0] == LINE_TARGET_HEIGHT + 2 * LINE_PAD
+    assert fitted.shape[1] < tall.shape[1]
+    assert (fitted < 128).any()  # the strokes survived the resize
+    empty = np.full((30, 90), 250, np.uint8)
+    assert fit_line(empty).shape == empty.shape
 
 
 def test_crop_with_padding_never_exceeds_the_image():

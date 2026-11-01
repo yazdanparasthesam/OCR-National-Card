@@ -729,6 +729,30 @@ class NationalCardOCR:
         """
         return max(1.5, float(self.settings.upscale) / max(prepared.scale, 1.0)) * prepared.upscale_boost
 
+    def _vote_text_variants(
+        self,
+        variants: list[tuple[str, np.ndarray]],
+        spec: FieldSpec,
+        source_name: str,
+        candidates: list[Candidate],
+        refined: Rect,
+        best: tuple[float, Candidate, FieldOutcome, Rect, float] | None,
+    ) -> tuple[float, Candidate, FieldOutcome, Rect, float] | None:
+        """Read every preprocessing variant of one ROI and keep the best candidate.
+
+        Tesseract's line segmenter sometimes reports *nothing* — or only a fragment —
+        for a perfectly legible RTL crop (a name that fills the box edge to edge is the
+        classic case), so the sparse-text modes are tried whenever the first reading is
+        not convincing.
+        """
+        best = self._collect_text_candidates(variants, spec.psm, spec, source_name, candidates, refined, best)
+        if best is None or not best[2].value or best[2].score < 0.9:
+            for psm in TEXT_FALLBACK_PSM:
+                best = self._collect_text_candidates(variants, psm, spec, source_name, candidates, refined, best)
+                if best is not None and best[2].score >= 0.99:
+                    break
+        return best
+
     def _read_field(self, prepared: PreparedCard, spec: FieldSpec, *, debug: bool = False) -> FieldResult:
         """OCR one field: label anchor first, then the template box, then vote."""
         width, height = prepared.canvas
@@ -782,26 +806,11 @@ class NationalCardOCR:
                 if best is not None and best[2].validated and best[2].score >= 0.99:
                     break  # validated by a checksum/calendar rule: no need for more passes
 
-            # 2) whole-line passes with several preprocessing variants
-            variants = field_variants(
-                roi_gray,
-                upscale_factor=self._field_upscale(prepared),
-                passes=self.settings.passes,
-            )
-            best = self._collect_text_candidates(
-                variants, spec.psm, spec, source_name, candidates, refined, best
-            )
-            if best is None or not best[2].value or best[2].score < 0.9:
-                # Tesseract's line segmenter sometimes reports *nothing* — or only a
-                # fragment — for a perfectly legible RTL crop (a name that fills the
-                # box edge to edge is the classic case).  The sparse-text modes see
-                # the whole word, so retry whenever the reading is not convincing.
-                for psm in TEXT_FALLBACK_PSM:
-                    best = self._collect_text_candidates(
-                        variants, psm, spec, source_name, candidates, refined, best
-                    )
-                    if best is not None and best[2].score >= 0.99:
-                        break
+            # 2) whole-line passes with several preprocessing variants. Both line
+            # heights are voted: gating the wide one behind a weak narrow reading saved
+            # ~0.4 s but cost a photo point, and accuracy wins here.
+            variants = field_variants(roi_gray, passes=self.settings.passes)
+            best = self._vote_text_variants(variants, spec, source_name, candidates, refined, best)
 
         if spec.kind in GLYPH_KINDS and whitelist and (best is None or not best[2].validated):
             # the checksum / calendar rejected every reading: ask a second reader

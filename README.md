@@ -62,14 +62,14 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
-| `national_code` | **100.0 %** | 100.0 % | 86.7 % | 91.0 % |
-| `last_name` | **93.3 %** | 96.9 % | 86.7 % | 88.5 % |
-| `first_name` | 90.0 % | 94.2 % | 86.7 % | 92.3 % |
-| `father_name` | 90.0 % | 97.8 % | 80.0 % | 83.6 % |
-| `birth_date` | 80.0 % | 96.3 % | 73.3 % | 85.3 % |
-| `serial_number` | 93.3 % | 98.6 % | 66.7 % | 75.6 % |
+| `national_code` | **100.0 %** | 100.0 % | 90.0 % | 94.0 % |
+| `last_name` | **100.0 %** | 100.0 % | 80.0 % | 82.0 % |
+| `first_name` | 93.3 % | 98.3 % | 83.3 % | 88.3 % |
+| `father_name` | 93.3 % | 98.6 % | 86.7 % | 86.7 % |
+| `birth_date` | 83.3 % | 97.0 % | 73.3 % | 87.7 % |
+| `serial_number` | 93.3 % | 98.6 % | 66.7 % | 74.2 % |
 | `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
-| **overall** | **92.4 %** | **97.7 %** | **79.5 %** | **84.7 %** |
+| **overall** | **94.8 %** | **98.9 %** | **79.5 %** | **84.2 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -85,7 +85,7 @@ How to read it:
   and glare in the benchmark): 79 % of cards come out perfect, 85 % of characters
   right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
-* Latency: **1.3–1.7 s per card** on CPU (single Tesseract binary, 8–14 subprocess
+* Latency: **1.6–2.0 s per card** on CPU (single Tesseract binary, 8–14 subprocess
   calls per card; the UI and API reuse a warm process-wide pipeline).
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
@@ -113,8 +113,8 @@ The Streamlit app shows accuracy in two honest flavours:
 | **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
-Nothing is inflated: the measured panel reports 92.4 % / 97.7 % on clean renders and
-79.5 % / 84.7 % on photo-style cards — the numbers in the table above.
+Nothing is inflated: the measured panel reports 94.8 % / 98.9 % on clean renders and
+79.5 % / 84.2 % on photo-style cards — the numbers in the table above.
 
 ### Rotated and mirrored photos
 
@@ -133,6 +133,25 @@ a card lying upside down. Two things make that work:
 Small photos are supersampled before reading (a 470-px card stretched to 1012 px loses
 exactly the stroke information digit segmentation needs), with a second read at full
 magnification when the first one comes back weak.
+
+### Why line height is normalised
+
+Tesseract's line finder has a narrow comfort zone. A text line whose height is below
+~20 px loses its strokes, and above ~60 px the same line is silently dropped — ``psm 7``
+returns an empty string and no error at all. That is exactly what happened to the field
+ROIs of a real card: the photo was supersampled to a 1518×957 canvas, every name crop
+came out ~80 px tall, and the reading collapsed into noise even though the crop was
+perfectly legible.
+
+Every ROI is therefore trimmed to its ink and scaled to a fixed line height
+(``nidocr/vision/enhance.py``: ``fit_line``), and the vote runs at two heights (44 px
+and 60 px) because blurred photos prefer the larger one. The same normalisation is what
+makes a reading independent of the input resolution: a 470-px screenshot and a 1012-px
+scan now produce the same OCR input.
+
+One related trap: a white border around the line hurts rather than helps with this
+Tesseract build (Persian text inside a white frame is dropped outright), so the fitted
+line is passed through as-is.
 
 ### Two card designs
 
@@ -449,7 +468,7 @@ data/lexicon/     first_names.txt, last_names.txt
 models/           tessdata/ + persian_digits.npz
 scripts/          benchmark, generate_synthetic_cards, train_digit_model,
                   build_name_lexicon, calibrate_template, fetch_models
-tests/            99 tests (unit + API + end-to-end on a rendered card + accuracy)
+tests/            100 tests (unit + API + end-to-end on a rendered card + accuracy)
 reports/          measured benchmark + digit-model reports
 ```
 
@@ -458,7 +477,7 @@ reports/          measured benchmark + digit-model reports
 ## Tests
 
 ```bash
-pytest                     # 99 tests, ~31 s
+pytest                     # 100 tests, ~32 s
 ruff check .               # style (optional)
 ```
 

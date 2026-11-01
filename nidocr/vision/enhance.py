@@ -121,39 +121,104 @@ def crop_with_padding(
     return crop
 
 
+LINE_TARGET_HEIGHT = 44
+"""Height in pixels a field ROI is scaled to before OCR.
+
+Tesseract's line finder misbehaves at both ends of the size range: a 20-px line has
+too few pixels per stroke and a 80-px line is rejected outright (``psm 7`` returns an
+empty string, no error). 44 px sits in the middle of the band that reads reliably on
+every card we tested, so the ROI is always normalised to it instead of being
+multiplied by a magnification that depends on the canvas size.
+"""
+
+LINE_TARGET_HEIGHTS = (44, 60)
+"""Line heights the vote is built on.
+
+The smaller height is best on clean scans (the strokes are thin and Tesseract's line
+finder is happy), the larger one keeps more detail on blurred phone photos, so both are
+produced and the field vote picks the winner. Two scales cost one extra OCR call per
+binarisation and measurably reduce the "which card resolution did I get" luck.
+"""
+
+LINE_PAD = 0
+"""White border kept around the trimmed line.
+
+Zero on purpose: this build of Tesseract drops the whole line ("``psm 7`` returns an
+empty string") as soon as a white frame surrounds Persian text, which was measurably
+worse than a bare crop. The trim already leaves a few pixels of margin around the ink.
+"""
+
+
+def fit_line(
+    roi_gray: np.ndarray,
+    *,
+    target_height: int = LINE_TARGET_HEIGHT,
+    pad_value: int = LINE_PAD,
+    min_ink_px: int = 6,
+) -> np.ndarray:
+    """Trim a field ROI to its ink and scale it to a canonical text-line height.
+
+    The trim removes the empty margins and the guilloche that surrounds the value, and
+    the resize normalises the glyph size, which is what makes a reading independent of
+    the card resolution (a 470-px photo and a 1012-px scan produce the same input).
+    A ROI without enough ink is returned untouched, so callers can still decide it is
+    empty.
+    """
+    if roi_gray.size == 0:
+        return roi_gray
+    binary = cv2.adaptiveThreshold(
+        roi_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 12
+    )
+    columns = np.where((binary > 0).sum(axis=0) > 1)[0]
+    rows = np.where((binary > 0).sum(axis=1) > 1)[0]
+    if len(columns) < min_ink_px or len(rows) < 3:
+        return roi_gray
+    x0, x1 = max(int(columns[0]) - 5, 0), min(int(columns[-1]) + 6, roi_gray.shape[1])
+    y0, y1 = max(int(rows[0]) - 4, 0), min(int(rows[-1]) + 5, roi_gray.shape[0])
+    line = roi_gray[y0:y1, x0:x1]
+    if line.size == 0:
+        return roi_gray
+    factor = target_height / float(line.shape[0])
+    if abs(factor - 1.0) > 0.02:
+        interpolation = cv2.INTER_AREA if factor < 1.0 else cv2.INTER_CUBIC
+        line = cv2.resize(
+            line,
+            (max(int(round(line.shape[1] * factor)), 1), max(int(round(line.shape[0] * factor)), 1)),
+            interpolation=interpolation,
+        )
+    # a hair of white keeps the glyph edges away from the image border
+    return cv2.copyMakeBorder(line, pad_value, pad_value, pad_value, pad_value, cv2.BORDER_CONSTANT, value=255)
+
+
 def field_variants(
     roi_gray: np.ndarray,
     *,
-    upscale_factor: float = 3.0,
     passes: int = 3,
-    pad_value: int = 18,
 ) -> list[tuple[str, np.ndarray]]:
     """Build the OCR inputs that are voted for one field.
 
     ``roi_gray`` is expected to come from the *already enhanced* card
-    (:func:`enhance_gray`), so only upscaling and binarisation happen here — running
-    the background flattening twice would erase thin Persian strokes.
+    (:func:`enhance_gray`), so only normalisation and binarisation happen here —
+    running the background flattening twice would erase thin Persian strokes.
 
-    All variants are padded with white borders: tesseract treats the outer frame as
-    a page boundary and needs breathing room around a single text line.
+    Every variant starts from :func:`fit_line`, i.e. a canonical text height, which is
+    what makes a reading independent of the card resolution (a phone photo is
+    supersampled, a scan is not).  The binarisations are produced at each height in
+    :data:`LINE_TARGET_HEIGHTS`; ``passes`` still controls how many of them exist.
     """
-    big = upscale(roi_gray, upscale_factor)
-    # a small white frame keeps the ROI from being interpreted as a "page"
-    padded = cv2.copyMakeBorder(big, pad_value, pad_value, pad_value, pad_value, cv2.BORDER_CONSTANT, value=255)
-
-    variants: list[tuple[str, np.ndarray]] = [("enhanced", padded)]
-    if passes >= 2:
-        binary = sauvola(padded, window=max(15, (padded.shape[1] // 12) | 1), k=0.22)
-        variants.append(("sauvola", despeckle(binary, min_area_px=8)))
-    if passes >= 3:
-        binary = otsu(padded)
-        variants.append(("otsu", despeckle(binary, min_area_px=8)))
-    if passes >= 4:
-        adaptive = cv2.adaptiveThreshold(
-            padded, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 12
-        )
-        variants.append(("adaptive", despeckle(adaptive, min_area_px=8)))
-    return variants[: max(1, passes)]
+    variants: list[tuple[str, np.ndarray]] = []
+    for index, target in enumerate(LINE_TARGET_HEIGHTS):
+        if index and passes < 3:
+            break
+        suffix = "" if index == 0 else "_wide"
+        padded = fit_line(roi_gray, target_height=target)
+        variants.append((f"enhanced{suffix}", padded))
+        if passes >= 2:
+            binary = sauvola(padded, window=max(15, (padded.shape[1] // 12) | 1), k=0.22)
+            variants.append((f"sauvola{suffix}", despeckle(binary, min_area_px=8)))
+        if passes >= 3:
+            variants.append((f"otsu{suffix}", despeckle(otsu(padded), min_area_px=8)))
+    return variants[: max(1, passes * 2)]
 
 
 def card_variants(color_card: np.ndarray) -> dict[str, np.ndarray]:
