@@ -1,0 +1,22 @@
+# Settings for the containerised deployment, where Streamlit sits behind a reverse
+# proxy (the preview host) instead of talking to the browser directly.
+#
+# The proxy terminates TLS and forwards requests without the session cookie that
+# Streamlit's XSRF check expects, so every upload was answered with
+#   403 {"message": "XSRF token missing or invalid"}
+# and the UI showed "AxiosError: Request failed with status code 403" instead of a
+# card.  Turning the check off is the documented remedy when a trusted proxy is the
+# only client; keep it on (delete this file) for any public, directly exposed
+# deployment.  ``maxUploadSize`` is raised so a full-resolution phone photo (or a
+# camera capture) always fits.
+
+[server]
+address = "0.0.0.0"
+port = 8501
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+maxUploadSize = 50
+
+[browser]
+gatherUsageStats = false

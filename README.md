@@ -314,6 +314,12 @@ nidocr ui                     # http://localhost:8501
 * **Self-contained**: the font is embedded as base64 and the pipeline runs
   in-process, so it works inside an iframe / offline environment (no CDN, no
   localhost calls from the browser).
+* **Behind a proxy**: `.streamlit/config.toml` turns Streamlit's XSRF check off and
+  raises the upload limit to 50 MB. A reverse proxy that terminates TLS (the preview
+  host, nginx, a tunnel) does not forward the session cookie the check wants, so every
+  upload is answered with `403 XSRF token missing or invalid` — in the UI that shows up
+  as *"AxiosError: Request failed with status code 403"* on the drop zone. Delete the
+  file for a public, directly exposed deployment.
 * Drag & drop, camera capture, or **«ساخت کارت نمونه»** which renders a synthetic
   card so you can try the whole flow without any data.
 * Persian-first RTL layout: field cards with the value in Persian digits, a
