@@ -46,6 +46,7 @@ from nidocr.vision.enhance import (
     fit_line,
     normalize_background,
     resize_to_max_side,
+    strip_annotation_overlay,
     unsharp,
     upscale,
 )
@@ -211,6 +212,10 @@ class NationalCardOCR:
         # upside-down card still has rotated text inside the canvas, so ask OSD
         # (one cheap call) and turn the canvas upright first.
         color, rotation, osd_confidence = upright(color, self.engine)
+        # a re-uploaded screenshot of the app's own annotated output has the field boxes
+        # burnt into the pixels; they cross the very letters they point at, so they are
+        # removed before any segmentation (a card photo is left untouched)
+        color = strip_annotation_overlay(color)
         variants = card_variants(color)
         want_anchors = self.settings.use_label_anchors if use_anchors is None else use_anchors
         anchors: dict[str, tuple[Rect, Anchor]] = {}

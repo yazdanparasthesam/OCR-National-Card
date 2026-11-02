@@ -16,6 +16,7 @@ from nidocr.vision.enhance import (
     field_variants,
     fit_line,
     normalize_background,
+    strip_annotation_overlay,
     to_gray,
 )
 from nidocr.vision.layout import load_template, refine_rect, value_rect_from_label
@@ -146,3 +147,24 @@ def test_overlay_and_encoders():
     assert encode_jpeg_base64(image)
     assert data_uri(image, "png").startswith("data:image/png;base64,")
     assert field_color(True, 99) != field_color(False, 10)
+
+
+def test_strip_annotation_overlay_removes_drawn_boxes():
+    """The orange boxes of an annotated screenshot are erased; the rest is untouched."""
+    card = np.full((240, 360, 3), 235, np.uint8)
+    cv2.rectangle(card, (20, 60), (340, 110), (40, 170, 250), 3)
+    cv2.rectangle(card, (20, 140), (340, 190), (40, 170, 250), 3)
+    before = cv2.cvtColor(card, cv2.COLOR_BGR2HSV)[..., 1].mean()
+    cleaned = strip_annotation_overlay(card)
+    after = cv2.cvtColor(cleaned, cv2.COLOR_BGR2HSV)[..., 1].mean()
+    assert after < before / 2
+    assert cleaned.shape == card.shape
+
+
+def test_strip_annotation_overlay_leaves_a_plain_card_alone():
+    """A card without drawn boxes is returned unchanged (the trigger needs 0.4 % coverage)."""
+    card = np.full((240, 360, 3), 220, np.uint8)
+    cv2.circle(card, (180, 120), 40, (150, 150, 150), -1)
+    assert np.array_equal(strip_annotation_overlay(card), card)
+    gray = card[..., 0].copy()
+    assert np.array_equal(strip_annotation_overlay(gray), gray)

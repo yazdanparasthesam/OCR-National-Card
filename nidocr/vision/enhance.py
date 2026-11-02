@@ -98,6 +98,37 @@ def enhance_gray(gray: np.ndarray, *, clahe_clip: float = 2.5) -> np.ndarray:
     return enhance_roi(normalize_background(gray), clahe_clip=clahe_clip)
 
 
+def strip_annotation_overlay(color: np.ndarray, *, min_coverage: float = 0.004) -> np.ndarray:
+    """Erase the coloured boxes that an earlier run drew *on top of* the card image.
+
+    A screenshot of the app's own annotated result carries the field rectangles in the
+    pixels, and their four perfectly straight sides run across the very value they point
+    at, which wrecks segmentation.  Two tests must both pass before a pixel is touched:
+    enough of the image is saturated orange/green (a real card photo scores about 0.1 % of
+    its pixels there, an annotated screenshot about 2 %), and most of that colour lies on
+    long straight lines (0.41 measured on an annotated screenshot, at most 0.12 for the
+    warm tint of an ordinary photo, which the colour test alone would wrongly accept).
+    """
+    if color.ndim != 3:
+        return color
+    hsv = cv2.cvtColor(color, cv2.COLOR_BGR2HSV)
+    hue, saturation, value = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    overlay = ((hue >= 12) & (hue <= 40) & (saturation > 110) & (value > 140)).astype(np.uint8)
+    if float(overlay.mean()) < min_coverage:
+        return color
+    height, width = overlay.shape[:2]
+    horizontal = cv2.getStructuringElement(cv2.MORPH_RECT, (max(11, int(0.25 * width)), 1))
+    vertical = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(11, int(0.25 * height))))
+    ruled = cv2.bitwise_or(
+        cv2.morphologyEx(overlay, cv2.MORPH_OPEN, horizontal),
+        cv2.morphologyEx(overlay, cv2.MORPH_OPEN, vertical),
+    )
+    if float(ruled.sum()) / max(1, int(overlay.sum())) < 0.25:
+        return color
+    ruled = cv2.dilate(ruled, np.ones((5, 5), np.uint8), iterations=1)
+    return cv2.inpaint(color, ruled * 255, 6, cv2.INPAINT_NS)
+
+
 def crop_with_padding(
     image: np.ndarray,
     rect: tuple[int, int, int, int],

@@ -154,6 +154,20 @@ Name fields are read the way the numeric ones already were — character by char
 * the crop keeps its black-on-white polarity and gets no white frame: both were measured
   to be the difference between «حسین» and an empty string.
 
+### Upload the card, not a screenshot of the result
+
+The boxes this app draws can end up *inside* a later upload: if the picture you send is a
+screenshot of the annotated preview, the rectangles are part of the pixels, and their
+straight sides run across the very letters they point at. `strip_annotation_overlay`
+removes them, but it cannot restore what they covered — the letters under an opaque box
+are simply gone (on a 715-px screenshot «منصوری» loses its «ن» and «رضا» is cut in half).
+
+The cleanup only fires when the picture really is an annotated screenshot: at least 0.4 %
+of it must be saturated orange/green *and* a quarter of that colour must lie on long
+straight lines. A real card photo scores 0.1 % and 0.0 there, and the warm tint of a
+yellow-ish photo scores 25 % coverage but only 0.12 on the line test, so it is left alone
+(every benchmark number in this file is unchanged by the cleanup).
+
 The reconstruction competes with the whole-line readings in the same vote, and it can
 only take over a *validated* whole-line reading when it is clearly more confident **and**
 not shorter (a shorter reconstruction has dropped a component).

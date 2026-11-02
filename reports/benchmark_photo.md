@@ -8,7 +8,7 @@
 - field exact match: **80.00%**
 - field character accuracy: **84.93%**
 - fully correct cards: **80.00%**
-- mean latency: 2581 ms / card
+- mean latency: 2591 ms / card
 
 | field | exact match | char accuracy | mean confidence | validator pass |
 |---|---|---|---|---|
@@ -18,7 +18,7 @@
 | `father_name` | 86.7% | 86.7% | 82.5 | 100.0% |
 | `birth_date` | 73.3% | 88.0% | 85.3 | 86.7% |
 | `serial_number` | 73.3% | 78.7% | 89.9 | 86.7% |
-| `gender` | 76.7% | 76.7% | 76.6 | 76.7% |
+| `gender` | 76.7% | 76.7% | 76.5 | 76.7% |
 
 ### Misreads
 
