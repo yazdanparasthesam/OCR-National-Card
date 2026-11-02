@@ -144,6 +144,23 @@ def test_auto_template_falls_back_on_a_flat_render(ocr):
     assert ocr.extract(image, template="auto").template == "national_card_front"
 
 
+def test_an_overexposed_card_still_picks_its_own_design(ocr, tmp_path):
+    """A blown-out photo must not flip the layout.
+
+    The design is chosen by the ink *fraction* of the two candidate photo boxes.  With
+    the previous mean-darkness score the washed smart card measured 0.076 against 0.031
+    for the wrong design — inside the 0.06 margin — so it fell back to the front
+    template and every box landed on the neighbouring row («نام» read as the national
+    code).  Wash both designs and each must still recognise itself.
+    """
+    for name in ("national_card_smart", "national_card_front"):
+        image = render_card(random_spec(21), load_template(name))
+        washed = cv2.convertScaleAbs(image, alpha=0.2, beta=210)
+        path = tmp_path / f"{name}.png"
+        cv2.imwrite(str(path), washed)
+        assert ocr.extract(path, template="auto").template == name
+
+
 def test_unknown_template_falls_back_to_the_default(ocr):
     """A stale client asking for a missing template gets the default, not a traceback."""
     result = ocr.extract(render_card(random_spec(16), load_template("national_card_front")), template="nope")

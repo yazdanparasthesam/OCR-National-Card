@@ -63,13 +63,13 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
 | `national_code` | **100.0 %** | 100.0 % | 90.0 % | 94.7 % |
-| `last_name` | **100.0 %** | 100.0 % | 83.3 % | 84.7 % |
-| `first_name` | 93.3 % | 97.5 % | 76.7 % | 85.1 % |
-| `father_name` | 90.0 % | 97.8 % | 86.7 % | 86.7 % |
+| `last_name` | **100.0 %** | 100.0 % | 80.0 % | 82.6 % |
+| `first_name` | 93.3 % | 98.3 % | 86.7 % | 89.2 % |
+| `father_name` | 93.3 % | 98.6 % | 86.7 % | 86.7 % |
 | `birth_date` | 83.3 % | 97.3 % | 73.3 % | 88.0 % |
 | `serial_number` | 96.7 % | 99.0 % | 73.3 % | 78.7 % |
 | `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
-| **overall** | **94.8 %** | **98.8 %** | **80.0 %** | **84.9 %** |
+| **overall** | **95.2 %** | **99.1 %** | **81.0 %** | **85.2 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -82,10 +82,10 @@ How to read it:
 * **national code and gender are effectively exact**: the mod-11 checksum and the
   two-word vocabulary make them self-correcting.
 * **photographed cards are harder** (down to 0.62× resolution, blur σ≈0.9, JPEG 45–70
-  and glare in the benchmark): 79 % of cards come out perfect, 85 % of characters
+  and glare in the benchmark): 81 % of cards come out perfect, 85 % of characters
   right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
-* Latency: **2.2–2.6 s per card** on CPU (single Tesseract binary, 8–14 subprocess
+* Latency: **1.3–2.6 s per card** on CPU (single Tesseract binary, 8–14 subprocess
   calls per card; the UI and API reuse a warm process-wide pipeline).
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
@@ -153,6 +153,24 @@ Name fields are read the way the numeric ones already were — character by char
   «۱» or nothing at all for a two-pixel-wide stroke, and a name holds no digits),
 * the crop keeps its black-on-white polarity and gets no white frame: both were measured
   to be the difference between «حسین» and an empty string.
+
+### A bright or overexposed photo no longer moves the boxes
+
+The design (smart card vs. the older front) is chosen without OCR, by measuring how
+much of each candidate *ID-photo region* is ink. That measurement used to be a mean
+grey level, and on a washed-out photo — highlights blown to white, contrast down to
+40 — the two regions differed by 0.055, just under the 0.06 margin, so the pipeline
+silently fell back to the default template. On a smart card the front template is one
+row off: «نام» then reads the national code and «نام خانوادگی» reads the first name.
+
+The score is now the *fraction* of pixels below the card's own ink level, which is
+exposure independent: a portrait covers 15–47 % of its box, a column of text 2–9 %
+(measured on three real photos against twelve benchmark renders, which it separates
+2–8× apart). Two smaller fixes came with it: a name ROI may grow 9 % of the canvas to
+the left when its first column still carries ink (a long «کمالی پور فهدان» was cut at
+its «ن», while «نام پدر» sits to the right, so nothing else can be pulled in), and the
+eyes that measured the row are the same ones that read it — a washed-out, sideways
+photo of a smart card went from *nothing* to national code, father name and birth date.
 
 ### Upload the card, not a screenshot of the result
 

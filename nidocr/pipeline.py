@@ -83,7 +83,14 @@ on different cards, so the tie-break has to be confidence, not a fixed scale."""
 FALLBACK_TEMPLATE = "national_card_front"
 """Template used when neither the requested name nor the configured default exists."""
 
-TEMPLATE_PHOTO_MARGIN = 0.06
+NAME_LEFT_EXTEND = 0.09
+"""How far a name ROI may grow to the left (fraction of the canvas width) before snapping."""
+
+TEMPLATE_PHOTO_FLOOR = 0.02
+"""Ink fraction a design's photo box must reach before it is believed (a blank box is not a photo)."""
+
+TEMPLATE_PHOTO_RATIO = 1.15
+"""How much more ink the winning photo box needs than the runner-up, else the default wins."""
 
 #: A card narrower than this (in source pixels) is supersampled before reading:
 #: measured on phone photos, 700 px is where glyph segmentation starts to merge digits.
@@ -742,6 +749,14 @@ class NationalCardOCR:
         if gray is None:  # pragma: no cover - defensive
             return default
         height, width = gray.shape[:2]
+        # The ink *fraction* of a region, not its mean darkness: an overexposed photo
+        # washes the whole card towards white, so a mean-based score makes the two
+        # candidate regions differ by 0.05 and the choice falls back to the default
+        # template — which puts every box one row off on a smart card.  Counting the
+        # pixels below the card's own Otsu level is exposure independent: a portrait
+        # covers 15-47 % of its box, a column of text 2-9 % (measured on three real
+        # photos against twelve benchmark renders, where it separates them cleanly).
+        level = _ink_level(gray)
         scores: dict[str, float] = {}
         for name in available_templates(self.settings):
             layout = self.template(name)
@@ -752,14 +767,26 @@ class NationalCardOCR:
             region = gray[y0:y1, x0:x1]
             if region.size == 0:
                 continue
-            scores[name] = float(255.0 - float(region.mean())) / 255.0
+            scores[name] = float((region < level).mean())
         if not scores:
             return default
         best_name = max(scores, key=scores.get)
-        other = max((value for name, value in scores.items() if name != best_name), default=0.0)
-        if scores[best_name] - other < TEMPLATE_PHOTO_MARGIN:
+        runner_up = max((value for name, value in scores.items() if name != best_name), default=0.0)
+        if scores[best_name] < max(TEMPLATE_PHOTO_FLOOR, runner_up * TEMPLATE_PHOTO_RATIO):
             return default
         return best_name
+
+    @staticmethod
+    def _clipped_left(binary: np.ndarray, rect: Rect) -> bool:
+        """True when the value runs into the left edge of its box (it is being cut)."""
+        x0, y0, x1, y1 = rect
+        height, width = binary.shape[:2]
+        x0, x1 = max(0, int(x0)), min(width, int(x1))
+        y0, y1 = max(0, int(y0)), min(height, int(y1))
+        if x1 - x0 < 8 or y1 - y0 < 8:
+            return False
+        strip = binary[y0:y1, x0 : x0 + max(2, int(0.02 * width))]
+        return int(np.count_nonzero(strip < 128)) >= 4
 
     @staticmethod
     def _glyph_line(roi_gray: np.ndarray, *, height_factor: float = 1.0) -> np.ndarray:
@@ -869,6 +896,13 @@ class NationalCardOCR:
         # two-word Persian name onto a single letter and the field reads empty
         allow_columns = spec.kind in GLYPH_KINDS
         for rect, source_name in options:
+            if spec.kind == "text" and self._clipped_left(prepared.binary, rect):
+                # a name is right-aligned but grows *leftwards*, and a long one runs past
+                # the template box: «کمالی پور فهدان» lost its «ن» at x = 824 while the
+                # rest of the row stayed empty up to the photo.  Widening the box before
+                # the ink is snapped costs nothing (the snap re-tightens it) and the
+                # label is on the right, so the space to the left is only ever the value.
+                rect = (max(0, rect[0] - int(NAME_LEFT_EXTEND * width)), rect[1], rect[2], rect[3])
             refined = self._refine(prepared.binary, rect, allow_columns=allow_columns)
             if rect_ink(prepared.binary, refined) < 0.003:
                 continue
@@ -916,7 +950,7 @@ class NationalCardOCR:
             # ~0.4 s but cost a photo point, and accuracy wins here.
             variants = field_variants(roi_gray, passes=self.settings.passes)
             best = self._vote_text_variants(variants, spec, source_name, candidates, refined, best)
-            if spec.kind == "text":
+            if spec.kind == "text" and self._clipped_left(prepared.binary, rect):
                 # 3) names: the same ROI read character by character and concatenated —
                 #    no lexicon, no word model, just the strokes in reading order
                 best = self._read_char_candidates(
@@ -1008,6 +1042,18 @@ def get_ocr(settings: Settings | None = None) -> NationalCardOCR:
     if _ocr is None or settings is not None:
         _ocr = NationalCardOCR(settings)
     return _ocr
+
+
+def _ink_level(gray: np.ndarray) -> float:
+    """The grey level that separates ink from paper on a whole card canvas.
+
+    Derived from two percentiles only, so it is exposure independent and needs no
+    histogram search: the paper is the median, the faintest ink the 2nd percentile, and
+    the split sits 60 % of the way down from the paper towards that ink.
+    """
+    paper = float(np.percentile(gray, 50))
+    darkest = float(np.percentile(gray, 2))
+    return paper - 0.6 * max(0.0, paper - darkest)
 
 
 def _similarity(left: str, right: str) -> float:
