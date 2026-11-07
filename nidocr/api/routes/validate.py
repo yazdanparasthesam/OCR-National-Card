@@ -19,7 +19,8 @@ def national_code(value: str = Body(..., embed=True, examples=["0012345678"])) -
     """Validate a national code without an image (mod-11 checksum + safe repair rules).
     Handy for form pre-checks: returns the normalised value and whether it was repaired.
     """
-    outcome = validate_national_code(value)
+    # the caller is explicitly asking "make this valid", so the derivation is wanted
+    outcome = validate_national_code(value, derive_check_digit=True)
     return NationalCodeValidation(
         input=value,
         value=outcome.value,

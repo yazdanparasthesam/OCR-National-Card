@@ -170,7 +170,37 @@ background and the junk colour quad then wins), and preferring colour whenever i
 tilted relative to the geometric quad (+ tilt gate kept 735 at 0/6 — the frame still
 blocked it).
 
-What is left: `national_code` is still only 1.3 % exact while 39 % of its characters
-are right — the digits arrive and the checksum repair does not close the gap; names are
-read at ~25 %.  Both are now worth attacking — they are no longer masked by a broken
-canvas.
+## The repair that was breaking correct reads (2026-11-07, fourth pass)
+
+`national_code` sat at 1.3 % exact with 39 % of its characters right — digits arrived,
+whole codes almost never.  Reading eight cards by hand found the cause: the checksum
+"repair" was rewriting *correct* readings.
+
+```
+truth 7231198618  read (no repair) 7231198618  ->  7231198619
+truth 3973076093  read (no repair) 3973076093  ->  3973076091
+truth 3863500888  read (no repair) 3863500888  ->  3863500881
+truth 6245701599  read (no repair) 6245701599  ->  6245701597
+```
+
+A printed code that fails mod-11 has one wrong digit *somewhere*; the derivation keeps
+the first nine and rewrites the tenth, which is only right when the tenth is the broken
+one.  On this dataset it is never right: **only 7 of the 150 labels are checksum-valid
+at all** (chance is ~1 in 11, so the ids are random ten-digit strings), and no
+alternative weighting of the mod-11 algorithm validates them either.  The derivation
+therefore has no signal and only corrupts.
+
+`validate_national_code(..., derive_check_digit=False)` is now the default; the
+`/validate/national-code` API route and `nidocr check` still pass `True`, because there
+the caller is explicitly asking for a valid code.  The unique-single-substitution repair
+and the lost/extra-glyph repairs are unchanged — they only fire when exactly one
+candidate exists.
+
+* 150 held-out: **21.44 % → 23.67 %** exact, 36.05 % → 36.13 % characters,
+  `national_code` **1.3 % → 14.7 %** exact (39.5 % chars), 2938 ms/card
+* clean renders 95.24 % / 99.05 %, photo renders 80.48 % / 85.92 % (unchanged)
+
+What is left: `national_code` now reads whole codes on 15 % of cards but many reads are
+truncated to two or three digits (`3`, `05`, `023`) — the row is cropped short or the
+glyphs merge, which is a segmentation problem, not a checksum one.  Names sit at ~25 %
+exact with ~35 % characters.

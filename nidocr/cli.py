@@ -141,7 +141,7 @@ def cmd_fields(_args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Command ``nidocr check``: mod-11 validation of a national code (exit 1 when invalid)."""
-    outcome = validate_national_code(args.value)
+    outcome = validate_national_code(args.value, derive_check_digit=True)
     print(json.dumps(
         {
             "input": args.value,

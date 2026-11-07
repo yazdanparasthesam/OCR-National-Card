@@ -98,7 +98,7 @@ def _deletions(digits: str) -> list[str]:
     return [f"{digits[:index]}{digits[index + 1:]}" for index in range(len(digits))]
 
 
-def validate_national_code(raw: str) -> FieldOutcome:
+def validate_national_code(raw: str, *, derive_check_digit: bool = False) -> FieldOutcome:
     """Normalise, validate and (when possible) repair a national code.
 
     Repair is deliberately **tiered**, because a blind "find any valid code one
@@ -106,12 +106,20 @@ def validate_national_code(raw: str) -> FieldOutcome:
     would happily rewrite a correct code into a wrong one:
 
     1. the code is valid — nothing to do;
-    2. the first nine digits are intact and only the check digit is wrong — the
-       checksum itself gives the right digit, so this repair is safe;
-    3. a single wrong digit somewhere: accepted **only** when exactly one valid
+    2. a single wrong digit somewhere: accepted **only** when exactly one valid
        candidate exists (otherwise the reading is ambiguous and is reported as
        invalid instead of guessed);
-    4. a digit was lost / doubled (length 9 or 11): same uniqueness rule.
+    3. a digit was lost / doubled (length 9 or 11): same uniqueness rule;
+    4. *optionally* (`derive_check_digit=True`) the first nine digits are kept and
+       the check digit is recomputed.
+
+    Step 4 is **off by default**, and that is a measured decision: a printed code that
+    fails the checksum has one wrong digit *somewhere*, and nothing says it is the last
+    one.  On 150 held-out real photos the derivation turned up no correct code and
+    rewrote several correct readings into valid-but-wrong ones (a card read as
+    `7231198618` came back as `7231198619`), because the derivation only ever changes
+    the tenth digit while the error was not there.  Callers that want a valid code out
+    of a nearly-valid string (the `/validate` API, the CLI) can still ask for it.
     """
     digits = only_digits(raw)
     if not digits:
@@ -135,10 +143,9 @@ def validate_national_code(raw: str) -> FieldOutcome:
         message = next(message for candidate, message in attempts if candidate == repairs[0])
         return FieldOutcome(repairs[0], True, True, 0.78, [message])
 
-    # 3) fall back to the checksum itself: keep the first nine digits, derive the
-    #    check digit.  Scored low on purpose — the first nine digits may be the
-    #    wrong ones, so a genuinely valid alternative must be able to win.
-    if len(digits) == 10 and len(set(digits)) > 1:
+    # 4) optionally fall back to the checksum itself: keep the first nine digits and
+    #    derive the check digit.  Off by default — see the docstring.
+    if derive_check_digit and len(digits) == 10 and len(set(digits)) > 1:
         expected = str(national_code_checksum(digits[:9]))
         if expected != digits[9]:
             candidate = digits[:9] + expected

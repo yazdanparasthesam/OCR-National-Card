@@ -29,14 +29,27 @@ def test_national_code_accepts_valid_checksums(code):
         assert is_valid_national_code(code)
 
 
-def test_national_code_fixes_the_check_digit():
-    """A wrong check digit is derived from the first nine digits (safe repair)."""
-    outcome = validate_national_code("1344005989")
+def test_national_code_fixes_the_check_digit_on_request():
+    """`derive_check_digit=True` rebuilds the tenth digit from the first nine."""
+    outcome = validate_national_code("1344005989", derive_check_digit=True)
     assert outcome.validated
     assert outcome.repaired
     assert outcome.value == "1344005985"
     # ...but the repair is scored low so a genuinely valid reading can win
     assert outcome.score < 0.7
+
+
+def test_national_code_keeps_the_reading_when_only_the_tail_could_be_rewritten():
+    """By default the digits are returned as read: the error may not be the last one.
+
+    Measured on real photos: the derivation turned correct readings (printed codes that
+    simply are not checksum-valid) into valid-but-wrong ones.
+    """
+    outcome = validate_national_code("7231198619")
+    assert outcome.value == "7231198619"
+    assert not outcome.repaired
+    # ...and `1344005989` (one digit away from a valid code) is left alone too
+    assert validate_national_code("1344005989").value == "1344005989"
 
 
 @pytest.mark.parametrize("code", ["0000000000", "1111111111", "12", "abcdefghij"])
@@ -46,9 +59,8 @@ def test_national_code_rejects_impossible_input(code):
 
 
 def test_national_code_repairs_one_wrong_digit():
-    # the 7th digit is corrupted: 1344005975 -> 1344005985
-    """A wrong check digit is rebuilt from the first nine digits."""
-    outcome = validate_national_code("1344005989")
+    """A code one digit away from validity is repaired when exactly one fix exists."""
+    outcome = validate_national_code("1344005989", derive_check_digit=True)
     assert outcome.validated
     assert outcome.value == "1344005985"
     assert outcome.repaired
