@@ -200,7 +200,42 @@ candidate exists.
   `national_code` **1.3 % → 14.7 %** exact (39.5 % chars), 2938 ms/card
 * clean renders 95.24 % / 99.05 %, photo renders 80.48 % / 85.92 % (unchanged)
 
-What is left: `national_code` now reads whole codes on 15 % of cards but many reads are
-truncated to two or three digits (`3`, `05`, `023`) — the row is cropped short or the
-glyphs merge, which is a segmentation problem, not a checksum one.  Names sit at ~25 %
-exact with ~35 % characters.
+## The quad has to be *shaped* like a card (2026-11-07, fifth pass)
+
+Dumping the canvases of six failing cards showed the last localisation hole plainly: on
+four of them the card sits at 20–30° in the frame and the *edge* hypothesis returns its
+axis-aligned bounding quad, aspect 1.08–1.31.  Squashing a 1.1 quad onto the canonical
+1.586 canvas stretches the card sideways, so a national code is read from the «نام» row
+and every field misses.  The colour blob quad on the same pictures is a proper rotated
+rectangle and warps the card straight.
+
+So "the geometric quad covers the picture" is no longer the test for keeping it; the
+test is **"the geometric quad is shaped like a card"**:
+
+```
+geometry_is_card = score >= 0.42  and  |aspect - 1.586| <= 0.25  and  area >= 0.65
+```
+
+* clean renders: aspect 1.586, area 1.0 → kept, colour never consulted
+* photo renders: aspect 1.44–1.58, area 0.70–0.83 → kept
+* a rotated card's bounding quad (1.08–1.31) or a junk quad → colour is preferred and
+  only has to clear 0.55
+
+This one condition improved *every* set, including the synthetic photos:
+
+| | before | after |
+|---|---|---|
+| 150 held-out real photos, exact | 23.67 % | **23.89 %** |
+| ... characters | 36.13 % | **36.55 %** |
+| photo renders | 80.48 % / 85.92 % | **83.81 % / 89.25 %** |
+| clean renders | 95.24 % / 99.05 % | 95.24 % / 99.05 % |
+| latency | 2938 ms/card | 2834 ms/card |
+
+(`expiry_date` 29.3 → 31.3 %, `father_name` 32.8 → 34.5 % characters; the photo renders
+are now *above* the pre-colour detector's 83.33 % / 89.11 %.)
+
+What is left: `national_code` reads whole codes on 14 % of cards, and many reads are
+still truncated to two or three digits (`3`, `05`, `023`) because the colour blob is
+inflated by the morphological close (the quad is 1.09 on a card whose own shape is 1.59)
+and is rejected by the `1.2 ≤ aspect` guard — the blob needs to be shrunk back to the
+card before its quad is used.  Names sit at ~25 % exact with ~35 % characters.

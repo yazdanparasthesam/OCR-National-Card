@@ -107,8 +107,8 @@ slice of 150 cards the gap is honest:
 
 | | clean renders | photo renders | 150 held-out real photos |
 |---|---|---|---|
-| field exact match | 95.2 % | 80.5 % | **23.7 %** |
-| field character accuracy | 99.1 % | 85.9 % | **36.1 %** |
+| field exact match | 95.2 % | 83.8 % | **23.9 %** |
+| field character accuracy | 99.1 % | 89.3 % | **36.6 %** |
 
 Real cards are a different problem: on many of these photos the card is *not* isolated
 by the warp — the warped canvas still holds the hand and the table, so the card fills
