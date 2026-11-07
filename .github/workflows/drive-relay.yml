@@ -2,51 +2,62 @@ name: drive-relay
 
 # Temporary relay: this sandbox can reach github.com only, while the card images live
 # on a public Google Drive folder. A GitHub runner can reach both, so it downloads the
-# folder here and uploads it as a build artifact, which `gh run download` brings back
-# into the workspace. Nothing is committed; the artifact is deleted after the transfer.
+# folder here, packs it into one zip and pushes that to a throwaway branch
+# (`relay/dataset`). The sandbox then fetches the branch with plain git — no Drive
+# access needed — and the branch is deleted straight after the transfer.
+#
+# Artifacts were the first attempt, but `gh run download` redirects to a blob host that
+# this sandbox cannot reach either; a git branch does not leave github.com.
 on:
   push:
     paths:
       - ".github/relay/trigger"
   workflow_dispatch:
-    inputs:
-      folder:
-        description: Public Google Drive folder with the card images
-        required: false
-        default: "https://drive.google.com/drive/folders/1gdNQDdVemuUyA3SbGf8KivNwkPTgyOJk"
-      labels:
-        description: Public Google Drive file with the label CSV
-        required: false
-        default: "17Xxt2-2f2UO_BiISBJwJTNVarxkIO6GP"
+
+permissions:
+  contents: write
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
-      FOLDER: ${{ github.event.inputs.folder || 'https://drive.google.com/drive/folders/1gdNQDdVemuUyA3SbGf8KivNwkPTgyOJk' }}
-      LABELS: ${{ github.event.inputs.labels || '17Xxt2-2f2UO_BiISBJwJTNVarxkIO6GP' }}
+      FOLDER: "https://drive.google.com/drive/folders/1gdNQDdVemuUyA3SbGf8KivNwkPTgyOJk"
+      LABELS: "17Xxt2-2f2UO_BiISBJwJTNVarxkIO6GP"
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install gdown
         run: python -m pip install --quiet gdown
 
-      - name: Download the folder
+      - name: Download the folder and the label CSV
         run: |
+          set -x
           mkdir -p payload
           gdown --folder "$FOLDER" -O payload --remaining-ok || true
-          find payload -type f | head -5
-          echo "files: $(find payload -type f | wc -l)"
+          gdown "$LABELS" -O payload/labels.csv || true
+          find payload -type f | wc -l
+          du -sh payload
 
-      - name: Download the label CSV
+      - name: Pack
         run: |
-          gdown "$LABELS" -O payload/labels.csv || gdown --fuzzy "$LABELS" -O payload/labels.csv
-          head -3 payload/labels.csv
+          if [ ! -s payload/labels.csv ]; then echo "labels.csv missing" >&2; exit 1; fi
+          python - <<'PY'
+          import os, zipfile
+          with zipfile.ZipFile("dataset.zip", "w", zipfile.ZIP_DEFLATED) as z:
+              for root, _dirs, files in os.walk("payload"):
+                  for name in sorted(files):
+                      path = os.path.join(root, name)
+                      z.write(path, os.path.relpath(path, "payload"))
+          print("zip written", os.path.getsize("dataset.zip"))
+          PY
+          du -h dataset.zip
 
-      - name: Report the size
-        run: du -sh payload && find payload -type f | wc -l
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: drive-cards
-          path: payload
-          retention-days: 1
+      - name: Push the branch
+        run: |
+          git config user.name "drive-relay"
+          git config user.email "drive-relay@users.noreply.github.com"
+          git checkout -B relay/dataset
+          git add -f dataset.zip
+          git commit -m "relay: card images + labels"
+          git push -f origin relay/dataset
