@@ -142,7 +142,35 @@ characters, at the same latency.  On the photo renders one card in thirty flips 
 other way (83.3 % → 80.0 %) — the price of a colour hypothesis that is allowed to
 overrule a low-scoring geometric one.
 
-What is left: `national_code` is still only 1.3 % exact while 36 % of its characters
-are right, i.e. the digits arrive and the checksum repair does not close the gap;
-names are read at ~23 %.  Both are now worth attacking — they are no longer masked by
-a broken canvas.
+## The frame that is not the card (2026-11-07, third pass)
+
+A single-card probe found the remaining localisation hole.  On card 735 the detector
+returned the **whole picture** as the card (`contour`, score 0.66, area 0.95) — no card
+edge had been found, the frame contour won on the 0.55 demotion — and its aspect ratio,
+1.26, was simply the snapshot's.  Warping a portrait frame onto the landscape canonical
+canvas squashes the card, so every box missed (0 of 6 fields, all six wrong).
+
+The fix is one condition on the existing colour hypothesis: a geometric quad that
+*already covers the picture* only blocks colour when its shape is a card's.  With
+`|aspect − 1.586| > 0.25` it is a miss, colour is preferred, and it only has to reach
+0.55 (it is beating the frame, not a real card).  Clean renders keep aspect 1.586 and
+area 1.0, so they still block colour exactly as before; photo renders sit at area
+0.70–0.83 and are unaffected.
+
+* card 735: **0/6 → 4/6** (`last_name`, `father_name`, `birth_date`, `expiry_date` right)
+* 150 held-out: **19.22 % → 21.44 %** exact, **33.92 % → 36.05 %** characters
+  (`national_code` 36.2 → 39.1 % chars, `last_name` 22.7 → 25.3 %, `first_name`
+  24.0 → 26.7 %, `father_name` 19.3 → 21.3 %, `birth_date` 22.0 → 24.7 %,
+  `expiry_date` 26.0 → 29.3 %), 2810 ms/card
+* clean renders 95.24 % / 99.05 % and photo renders 80.00 % / 85.77 % — unchanged
+
+Rejected on the way: lowering the colour bar globally to 0.60 (real probe +2 fields but
+clean renders 95.2 % → 69.1 %, because on a render the colour mask also covers the
+background and the junk colour quad then wins), and preferring colour whenever it is
+tilted relative to the geometric quad (+ tilt gate kept 735 at 0/6 — the frame still
+blocked it).
+
+What is left: `national_code` is still only 1.3 % exact while 39 % of its characters
+are right — the digits arrive and the checksum repair does not close the gap; names are
+read at ~25 %.  Both are now worth attacking — they are no longer masked by a broken
+canvas.

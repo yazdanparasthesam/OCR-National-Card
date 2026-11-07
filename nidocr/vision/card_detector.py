@@ -257,6 +257,9 @@ CARD_PALE_MIN_V = 165
 CARD_PALE_MAX_S = 28
 #: A warped canvas is accepted as "the card" when this much of its border ring is card.
 CARD_BORDER_FILL = 0.80
+#: The bar a colour quad has to clear when the geometric quad is a *missed* card (the
+#: whole frame with the picture's own aspect) — then colour only has to beat the frame.
+CARD_BORDER_FILL_WEAK = 0.55
 BORDER_PROBE = (240, 151)
 
 
@@ -348,15 +351,22 @@ def detect_card(image: np.ndarray, settings: Settings | None = None) -> CardDete
             colour_quad = None
     geometry_fill = _border_fill(mask, best_quad) if best_quad is not None else 0.0
     geometry_area = _quad_metrics(best_quad, frame_area)[1] if best_quad is not None else 0.0
-    # only a *convincing* geometric quad that already covers the picture blocks the
+    # Only a *convincing* geometric quad that already covers the picture blocks the
     # colour hypothesis — a low-scoring one keeps the frame anyway, and colour is
-    # strictly better than the frame
-    geometry_covers = best_score >= 0.42 and geometry_area >= 0.90
+    # strictly better than the frame.  "Covers the picture" alone is not enough: a
+    # phone photo whose card was missed leaves the frame to win, and a frame is only
+    # called the card when its shape matches a card (aspect 1.59).  A frame-shaped,
+    # frame-sized quad with the picture's aspect (a portrait snapshot, ratio 1.26) is
+    # a miss, and then the colour quad only has to beat the frame, not a real card.
+    geometry_aspect = _quad_metrics(best_quad, frame_area)[0] if best_quad is not None else 0.0
+    frame_like = geometry_area >= 0.90 and abs(geometry_aspect - settings.card_aspect) > 0.25
+    geometry_covers = best_score >= 0.42 and geometry_area >= 0.90 and not frame_like
+    needed = CARD_BORDER_FILL_WEAK if frame_like else CARD_BORDER_FILL
 
     if (
         colour_quad is not None
         and not geometry_covers
-        and colour_fill >= CARD_BORDER_FILL
+        and colour_fill >= needed
         and colour_fill > geometry_fill + 0.02
     ):
         quad = colour_quad * scale
