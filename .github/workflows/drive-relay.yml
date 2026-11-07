@@ -36,7 +36,7 @@ jobs:
           set +e
           {
             echo "== gdown --version"; gdown --version
-            echo "== folder download"; gdown --folder "$FOLDER" -O payload --remaining-ok
+            echo "== folder download"; gdown --folder "$FOLDER" -O payload
             echo "== folder exit: $?"
             echo "== labels"; gdown "$LABELS" -O payload/labels.csv
             echo "== labels exit: $?"
