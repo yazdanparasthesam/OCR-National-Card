@@ -90,8 +90,10 @@ jobs:
           git rm -rq --cached . >/dev/null 2>&1 || true
           {
             git add -f download.log
-            git add -f dataset.zip
-            for f in part.zip.*; do [ -e "$f" ] && git add -f "$f"; done
+            for f in dataset.zip part.zip.*; do
+              if [ -e "$f" ]; then git add -f "$f"; fi
+            done
+            git status --short | head -25
             git commit -qm "kaggle payload"
             git push -f origin HEAD:refs/heads/relay/kaggle
           } > push.log 2>&1
