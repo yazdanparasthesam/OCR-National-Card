@@ -57,6 +57,15 @@ python scripts/benchmark.py --generate 30 --difficulty clean --out reports/bench
 python scripts/benchmark.py --generate 30 --difficulty photo --out reports/benchmark_photo.md
 ```
 
+Have your own labelled cards? A folder of images plus **one CSV** is enough — the labels
+are matched by column name (English or Persian), rows whose image is missing are reported,
+and the result is a dataset the benchmark and the «دقت» tab both understand:
+
+```bash
+python scripts/csv_to_dataset.py --csv labels.csv --images cards/ --out data/real
+python scripts/benchmark.py --dataset data/real --difficulty custom
+```
+
 Field **exact match** / **character accuracy** — 30 cards each, 7 fields per card,
 Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 
