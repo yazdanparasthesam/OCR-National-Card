@@ -70,10 +70,14 @@ jobs:
           cd ..
           ls -l dataset.zip
           size=$(stat -c%s dataset.zip)
-          if [ "$size" -gt 85000000 ]; then
-            split -b 80m -d dataset.zip part.zip.
+          if [ "$size" -gt 45000000 ]; then
+            # GitHub rejects a blob over 100 MB, and a failed push leaves no log behind,
+            # so the monolith is cut into 45 MB pieces and then thrown away
+            split -b 45m -d dataset.zip part.zip.
+            rm -f dataset.zip
             ls -l part.zip.*
           fi
+          echo "files to push:"; ls -l
 
       - name: Push the payload to a throwaway branch
         run: |
