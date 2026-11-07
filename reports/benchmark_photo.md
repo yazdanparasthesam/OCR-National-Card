@@ -8,7 +8,7 @@
 - field exact match: **83.33%**
 - field character accuracy: **89.11%**
 - fully correct cards: **83.33%**
-- mean latency: 1717 ms / card
+- mean latency: 1751 ms / card
 
 | field | exact match | char accuracy | mean confidence | validator pass |
 |---|---|---|---|---|

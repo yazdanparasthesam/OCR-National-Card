@@ -12,19 +12,19 @@
 
 | | 150 held-out cards | the first 87 (tuned on) |
 |---|---|---|
-| field exact match | **7.67 %** | 5.36 % |
-| field character accuracy | **19.09 %** | 15.43 % |
-| fully correct cards | **7.67 %** | 5.36 % |
+| field exact match | **7.78 %** | 5.36 % |
+| field character accuracy | **19.91 %** | 15.43 % |
+| fully correct cards | **7.78 %** | 5.36 % |
 | mean latency | 3159 ms / card | 2926 ms / card |
 
 | field | exact (150 held-out) | chars | exact (87) | chars |
 |---|---|---|---|---|
-| `national_code` | 0.7 % | 22.1 % | 0.0 % | 17.7 % |
-| `last_name` | 10.0 % | 18.8 % | 6.9 % | 13.9 % |
-| `first_name` | 10.7 % | 18.0 % | 6.9 % | 17.0 % |
-| `father_name` | 7.3 % | 18.4 % | 3.4 % | 12.7 % |
-| `birth_date` | 7.3 % | 18.3 % | 8.0 % | 20.6 % |
-| `expiry_date` | 10.0 % | 19.0 % | 6.9 % | 10.7 % |
+| `national_code` | 0.7 % | 22.7 % | 0.0 % | 17.7 % |
+| `last_name` | 10.0 % | 18.9 % | 6.9 % | 13.9 % |
+| `first_name` | 11.3 % | 19.4 % | 6.9 % | 17.0 % |
+| `father_name` | 7.3 % | 18.0 % | 3.4 % | 12.7 % |
+| `birth_date` | 7.3 % | 20.4 % | 8.0 % | 20.6 % |
+| `expiry_date` | 10.0 % | 20.0 % | 6.9 % | 10.7 % |
 
 Same pipeline on the synthetic sets: clean 93.33 % / 97.62 %, photo 83.33 % / 89.11 %.
 
@@ -59,3 +59,21 @@ Same pipeline on the synthetic sets: clean 93.33 % / 97.62 %, photo 83.33 % / 89
 * Re-check the OSD 180° decision with the card's own text layout (the expiry row is the
   bottom row; a flipped card puts it on top).
 * Re-train / re-validate the glyph digit classifier on the real crops once (1) is fixed.
+
+## Detection experiments (2026-11-07)
+
+* **Content-based quad selection — rejected.** Scoring every hypothesis (contour, mask,
+  full frame) by what its warp contains (portrait in the photo box, six text rows in the
+  value column) and keeping the best *looked* right on the real photos but cost the
+  photo-style renders 83.3 % → 72.4 % of cards: on a render the contour is already
+  exact, and a 340-px preview cannot tell a slightly-tight crop from a good one.
+* **Colour-based rescue — kept.** Where the geometric detection gives up
+  (`full_frame_fallback`, 15 of 60 held-out cards) a bright/low-saturation blob is tried
+  as a card quad, and accepted only if its warp scores ≥ 0.55. It fires on 1 card in 60
+  and moved the held-out set 7.67 % → 7.78 % / 19.1 % → 19.9 %: real but small.
+* **Lowering the shape cut-off to 0.38 — rejected.** It turns 25 of 60 "not found"
+  cards into contour quads, but the held-out set went 7.78 % → 7.67 % / 19.9 % → 19.0 %:
+  those quads are wrong, and a wrong quad is not better than the full frame.
+* **Row growth on a scan or a render — rejected.** Growing a clipped ROI pulls the
+  «نام پدر» label into the father-name value on a clean render (95.2 % → 93.3 % on the
+  clean set). Growth is now limited to cards that were cut out of a larger picture.

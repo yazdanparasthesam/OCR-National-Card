@@ -83,6 +83,9 @@ on different cards, so the tie-break has to be confidence, not a fixed scale."""
 FALLBACK_TEMPLATE = "national_card_front"
 """Template used when neither the requested name nor the configured default exists."""
 
+FULL_FRAME_AREA = 0.98
+"""A quad that covers this much of the picture is the picture, not a card inside it."""
+
 NUMBER_LEFT_EXTEND = 0.15
 """How far a numeric ROI may grow to the left: a ten-digit row is wider than any name,
 so a box that starts inside it drops the leading digits («5116168397» → «168397»)."""
@@ -781,6 +784,18 @@ class NationalCardOCR:
         return best_name
 
     @staticmethod
+    def _is_photographed(prepared: PreparedCard) -> bool:
+        """True when the card was cut out of a larger picture, not scanned whole.
+
+        The template's rows are exact for a scan or a render (the quad is the frame, or
+        covers it), but a photograph goes through a quadrilateral fit that is never
+        exact: on the real photos a box lands half a row off and cuts its own glyphs.
+        Row growth is therefore only used when something was actually cut out.
+        """
+        detection = prepared.detection
+        return detection.method in {"contour", "mask"} and detection.area_ratio < FULL_FRAME_AREA
+
+    @staticmethod
     def _clipped_row(binary: np.ndarray, rect: Rect, edge: str) -> bool:
         """True when the box cuts through ink at its top or bottom edge."""
         x0, y0, x1, y1 = rect
@@ -950,8 +965,9 @@ class NationalCardOCR:
                 # because the ink is snapped again inside the wider box.
                 extend = NAME_LEFT_EXTEND if spec.kind == "text" else NUMBER_LEFT_EXTEND
                 rect = (max(0, rect[0] - int(extend * width)), rect[1], rect[2], rect[3])
-            if self._clipped_row(prepared.binary, rect, "top") or self._clipped_row(
-                prepared.binary, rect, "bottom"
+            if self._is_photographed(prepared) and (
+                self._clipped_row(prepared.binary, rect, "top")
+                or self._clipped_row(prepared.binary, rect, "bottom")
             ):
                 rect = self._grow_rows(prepared.binary, rect, height)
             refined = self._refine(prepared.binary, rect, allow_columns=allow_columns)

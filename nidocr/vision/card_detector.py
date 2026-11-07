@@ -17,8 +17,13 @@ import numpy as np
 
 from nidocr.config import Settings, get_settings
 from nidocr.vision.enhance import resize_to_max_side
+from nidocr.vision.layout import load_template
 
 CARD_ASPECT = 85.6 / 53.98
+
+#: Both designs are tried when a hypothesis is judged by what its warp *contains*.
+CONTENT_TEMPLATES = ("national_card_front", "national_card_smart")
+CONTENT_PREVIEW = (340, 215)
 
 
 @dataclass
@@ -158,6 +163,88 @@ def _contour_candidates(image: np.ndarray) -> list[np.ndarray]:
     return candidates
 
 
+def _card_mask_quad(image: np.ndarray) -> np.ndarray | None:
+    """Quadrilateral of the biggest bright, low-saturation blob — the card itself.
+
+    Used only as a *rescue* hypothesis: when no contour is convincing (a card on a
+    cluttered desk, a card in a hand, a card next to a labelled bottle) the picture is
+    either the card or the scene around it, and an Otsu split on saturation and on
+    brightness separates the pale card from skin, wood and plastic.
+    """
+    work = resize_to_max_side(image, 900)
+    hsv = cv2.cvtColor(work, cv2.COLOR_BGR2HSV)
+    _, low_saturation = cv2.threshold(hsv[:, :, 1], 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, bright = cv2.threshold(hsv[:, :, 2], 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    mask = cv2.bitwise_and(low_saturation, bright)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((25, 25), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((15, 15), np.uint8))
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+    if count < 2:
+        return None
+    biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    blob = (labels == biggest).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    hull = cv2.convexHull(max(contours, key=cv2.contourArea))
+    perimeter = cv2.arcLength(hull, True)
+    approx = cv2.approxPolyDP(hull, 0.02 * perimeter, True)
+    quad = (
+        approx.reshape(4, 2).astype(np.float32)
+        if len(approx) == 4
+        else cv2.boxPoints(cv2.minAreaRect(hull)).astype(np.float32)
+    )
+    return quad * (image.shape[1] / work.shape[1])
+
+
+def _content_score(canvas: np.ndarray) -> float:
+    """How much a warped canvas looks like *a card*, in 0..1.
+
+    A correct warp carries a portrait in the photo box (15–45 % of it below the card's
+    own ink level) and a column of six text rows to its right (2–9 %).  Both designs
+    are tried and the better score wins, so it does not matter which one the card is.
+    """
+    gray = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
+    level = float(np.percentile(gray, 25))
+    height, width = gray.shape[:2]
+    best = 0.0
+    for name in CONTENT_TEMPLATES:
+        layout = load_template(name)
+        photo = layout.raw.get("decorations", {}).get("photo")
+        values = [layout.value_rect(key, width, height) for key in layout.keys()]  # noqa: SIM118
+        values = [rect for rect in values if rect]
+        if not photo or len(values) < 4:
+            continue
+        px0, py0, px1, py1 = layout._to_pixels(photo, width, height)
+        portrait = float((gray[py0:py1, px0:px1] < level).mean())
+        vx0, vy0 = min(r[0] for r in values), min(r[1] for r in values)
+        vx1, vy1 = max(r[2] for r in values), max(r[3] for r in values)
+        ink = float((gray[vy0:vy1, vx0:vx1] < level).mean())
+        portrait_term = max(0.0, 1.0 - abs(portrait - 0.30) / 0.28)
+        ink_term = max(0.0, 1.0 - abs(ink - 0.050) / 0.050)
+        best = max(best, 0.55 * ink_term + 0.45 * portrait_term)
+    return float(best)
+
+
+def _rescue_quad(image: np.ndarray, frame_area: float, settings: Settings) -> np.ndarray | None:
+    """The colour-based card quad, when it convincingly beats the whole frame.
+
+    Called only where the geometric detection gave up, so the full frame is what the
+    pipeline would otherwise use: the rescue has to earn its place by *looking* like a
+    card (a portrait and a column of text), and a quad that does not is dropped.
+    """
+    candidate = _card_mask_quad(image)
+    if candidate is None:
+        return None
+    aspect, area_ratio, rectangularity = _quad_metrics(candidate, frame_area)
+    if aspect <= 1.0 or area_ratio < 0.08 or rectangularity < 0.55:
+        return None
+    if np.exp(-(((aspect - settings.card_aspect) / 0.45) ** 2)) < 0.55:
+        return None
+    canvas = warp_card(image, candidate, size=CONTENT_PREVIEW)
+    return candidate if _content_score(canvas) >= 0.55 else None
+
+
 def detect_card(image: np.ndarray, settings: Settings | None = None) -> CardDetection:
     """Find the card quad. Never raises: falls back to the full frame."""
     settings = settings or get_settings()
@@ -198,6 +285,20 @@ def detect_card(image: np.ndarray, settings: Settings | None = None) -> CardDete
     aspect, area_ratio, _ = _quad_metrics(quad, float(width * height))
     found = best_score >= 0.42 and area_ratio >= 0.05
     if not found:
+        rescue = _rescue_quad(working, frame_area, settings)
+        if rescue is not None:
+            rescued = rescue * scale
+            resc_aspect, resc_area, _ = _quad_metrics(rescued, float(width * height))
+            return CardDetection(
+                quad=rescued.astype(np.float32),
+                score=round(best_score, 4),
+                method="mask",
+                aspect=resc_aspect,
+                area_ratio=resc_area,
+                found=True,
+                image_size=(width, height),
+                notes=["کارت از رنگ و روشنایی جدا شد (لبه‌های آن به‌اندازه کافی واضح نبودند)"],
+            )
         return CardDetection(
             quad=order_quad([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]]),
             score=best_score,

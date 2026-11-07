@@ -72,13 +72,13 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
 | `national_code` | **100.0 %** | 100.0 % | 83.3 % | 89.7 % |
-| `last_name` | 96.7 % | 97.3 % | 90.0 % | 92.6 % |
-| `first_name` | 90.0 % | 95.0 % | 93.3 % | 94.2 % |
-| `father_name` | 90.0 % | 95.3 % | 93.3 % | 96.2 % |
-| `birth_date` | 80.0 % | 96.7 % | 66.7 % | 86.7 % |
+| `last_name` | **100.0 %** | 100.0 % | 90.0 % | 92.6 % |
+| `first_name` | 93.3 % | 98.3 % | 93.3 % | 94.2 % |
+| `father_name` | 93.3 % | 98.6 % | 93.3 % | 96.2 % |
+| `birth_date` | 83.3 % | 97.3 % | 66.7 % | 86.7 % |
 | `serial_number` | 96.7 % | 99.0 % | 76.7 % | 84.5 % |
 | `gender` | **100.0 %** | 100.0 % | 80.0 % | 80.0 % |
-| **overall** | **93.3 %** | **97.6 %** | **83.3 %** | **89.1 %** |
+| **overall** | **95.2 %** | **99.1 %** | **83.3 %** | **89.1 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -86,7 +86,7 @@ digit-classifier report [`reports/digits.md`](reports/digits.md).
 
 How to read it:
 
-* **character accuracy ≈ 98 % on flat scans**, i.e. ≤ 2 characters wrong per card —
+* **character accuracy ≥ 97.8 % on flat scans**, i.e. ≤ 2 characters wrong per card —
   the values are safe to *review*, and the validator flags what it doubts.
 * **national code and gender are effectively exact**: the mod-11 checksum and the
   two-word vocabulary make them self-correcting.
@@ -107,8 +107,8 @@ slice of 150 cards the gap is honest:
 
 | | clean renders | photo renders | 150 held-out real photos |
 |---|---|---|---|
-| field exact match | 93.3 % | 83.3 % | **7.7 %** |
-| field character accuracy | 97.6 % | 89.1 % | **19.1 %** |
+| field exact match | 95.2 % | 83.3 % | **7.8 %** |
+| field character accuracy | 99.1 % | 89.1 % | **19.9 %** |
 
 Real cards are a different problem: on many of these photos the card is *not* isolated
 by the warp — the warped canvas still holds the hand and the table, so the card fills
@@ -145,7 +145,7 @@ The Streamlit app shows accuracy in two honest flavours:
 | **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
-Nothing is inflated: the measured panel reports 93.3 % / 97.6 % on clean renders and
+Nothing is inflated: the measured panel reports 95.2 % / 99.1 % on clean renders and
 83.3 % / 89.1 % on photo-style cards — the numbers in the table above.
 
 ### Rotated and mirrored photos
@@ -204,12 +204,14 @@ its «ن», while «نام پدر» sits to the right, so nothing else can be pu
 ROI grows 15 % the same way (a ten-digit national code was read as «168397» when its box
 started inside the row), and a box that is still *cutting through glyphs* at its top or
 bottom edge grows up to 3 % of the canvas until the glyphs end — measured on the edges
-themselves, so a box with clear space around it never moves. On the 87 real photos that
-last one is worth more than everything else in this section: 1.9 % → 5.4 % of cards
-completely right, and on the photo-style renders 81 % → 83 % of cards and 85.2 % → 89.1 %
-of characters. The eyes that measured the row are the same ones that read it — a
-washed-out, sideways photo of a smart card went from *nothing* to national code, father
-name and birth date.
+themselves, so a box with clear space around it never moves, and only on a card that was
+*cut out of a larger picture* (a scan or a render warps exactly onto the template, and
+growing there would pull the label into the value). On the real photos that last one is
+worth more than everything else in this section — 1.9 % → 7.8 % of cards completely
+right — and on the photo-style renders 81 % → 83 % of cards and 85.2 % → 89.1 % of
+characters, with the clean renders unchanged at 95.2 %. The eyes that measured the row
+are the same ones that read it — a washed-out, sideways photo of a smart card went from
+*nothing* to national code, father name and birth date.
 
 ### Upload the card, not a screenshot of the result
 
