@@ -10,21 +10,21 @@
 
 **Held-out slice, ids 700–849 — 150 cards the pipeline was never tuned on:**
 
-| | 150 held-out cards | the first 87 (tuned on) |
+| | after localisation + row fit | before (same 150 cards) | the first 87 |
 |---|---|---|
-| field exact match | **7.78 %** | 5.36 % |
-| field character accuracy | **19.91 %** | 15.43 % |
-| fully correct cards | **7.78 %** | 5.36 % |
-| mean latency | 3159 ms / card | 2926 ms / card |
+| field exact match | **19.22 %** | 7.78 % | 5.36 % |
+| field character accuracy | **33.92 %** | 19.91 % | 15.43 % |
+| fully correct cards | **19.22 %** | 7.78 % | 5.36 % |
+| mean latency | 3125 ms / card | 3159 ms / card | 2926 ms / card |
 
-| field | exact (150 held-out) | chars | exact (87) | chars |
+| field | exact (after) | chars | exact (before) | chars |
 |---|---|---|---|---|
-| `national_code` | 0.7 % | 22.7 % | 0.0 % | 17.7 % |
-| `last_name` | 10.0 % | 18.9 % | 6.9 % | 13.9 % |
-| `first_name` | 11.3 % | 19.4 % | 6.9 % | 17.0 % |
-| `father_name` | 7.3 % | 18.0 % | 3.4 % | 12.7 % |
-| `birth_date` | 7.3 % | 20.4 % | 8.0 % | 20.6 % |
-| `expiry_date` | 10.0 % | 20.0 % | 6.9 % | 10.7 % |
+| `national_code` | 1.3 % | 36.2 % | 0.7 % | 22.7 % |
+| `last_name` | 22.7 % | 33.4 % | 10.0 % | 18.9 % |
+| `first_name` | 24.0 % | 34.5 % | 11.3 % | 19.4 % |
+| `father_name` | 19.3 % | 31.5 % | 7.3 % | 18.0 % |
+| `birth_date` | 22.0 % | 33.5 % | 7.3 % | 20.4 % |
+| `expiry_date` | 26.0 % | 34.4 % | 10.0 % | 20.0 % |
 
 Same pipeline on the synthetic sets: clean 93.33 % / 97.62 %, photo 83.33 % / 89.11 %.
 
@@ -118,3 +118,31 @@ lands somewhere else (that is the 0-of-54 group above).  The picture is now turn
 the detection redone instead, which keeps the canonical canvas and the card's aspect.
 On the nine cards that hit this path the reading did not improve (their quads are junk
 either way), but the path no longer guarantees nonsense.
+
+## What fixed it (2026-11-07, second pass)
+
+Two changes, both measured on the same 150 held-out cards:
+
+1. **The card is found by colour.** A national card is a pale cyan sheet with a pink
+   band; a hand, wood, a bottle and a bin are outside those HSV bands.  The largest
+   blob of that mask gives a quad, and it is used when the card fills the canvas it
+   produces (≥ 0.80 of the border ring is card) and beats the geometric quad by 0.02.
+   The geometric quad keeps priority whenever it is convincing and already covers the
+   picture, so scans and renders are untouched (clean renders still 95.2 %).
+2. **The row grid is fitted per card.** The template's rows are a proportion of the
+   design, but a photographed card leaves the warp a few percent larger or smaller and
+   a box then reads its neighbour.  The ink profile of the value column is smoothed,
+   its strongest maxima are taken as candidate rows, and the window whose gaps match the
+   template pitch is fitted with a straight line (scale 0.92–1.08, offset ±8 % of the
+   height, every row within 9 px of a peak).  The worst cases were boxes sitting 20–40 px
+   below their values — «شماره ملی» read from the «نام» row.
+
+Together: **7.78 % → 19.22 %** of cards completely right, **19.91 % → 33.92 %** of
+characters, at the same latency.  On the photo renders one card in thirty flips the
+other way (83.3 % → 80.0 %) — the price of a colour hypothesis that is allowed to
+overrule a low-scoring geometric one.
+
+What is left: `national_code` is still only 1.3 % exact while 36 % of its characters
+are right, i.e. the digits arrive and the checksum repair does not close the gap;
+names are read at ~23 %.  Both are now worth attacking — they are no longer masked by
+a broken canvas.

@@ -5,20 +5,20 @@
 
 - cards: **30**
 - difficulty: `photo`
-- field exact match: **83.33%**
-- field character accuracy: **89.11%**
-- fully correct cards: **83.33%**
-- mean latency: 1751 ms / card
+- field exact match: **80.00%**
+- field character accuracy: **85.77%**
+- fully correct cards: **80.00%**
+- mean latency: 1950 ms / card
 
 | field | exact match | char accuracy | mean confidence | validator pass |
 |---|---|---|---|---|
-| `national_code` | 83.3% | 89.7% | 93.2 | 86.7% |
-| `last_name` | 90.0% | 92.6% | 77.1 | 100.0% |
-| `first_name` | 93.3% | 94.2% | 82.8 | 100.0% |
-| `father_name` | 93.3% | 96.2% | 80.2 | 100.0% |
-| `birth_date` | 66.7% | 86.7% | 81.6 | 86.7% |
-| `serial_number` | 76.7% | 84.5% | 93.5 | 86.7% |
-| `gender` | 80.0% | 80.0% | 75.6 | 80.0% |
+| `national_code` | 80.0% | 86.3% | 89.9 | 83.3% |
+| `last_name` | 86.7% | 89.3% | 74.4 | 96.7% |
+| `first_name` | 90.0% | 90.8% | 79.7 | 96.7% |
+| `father_name` | 90.0% | 92.9% | 77.5 | 96.7% |
+| `birth_date` | 63.3% | 83.3% | 78.4 | 83.3% |
+| `serial_number` | 73.3% | 81.1% | 90.2 | 83.3% |
+| `gender` | 76.7% | 76.7% | 72.6 | 76.7% |
 
 ### Misreads
 
@@ -54,8 +54,13 @@
 | card_013.jpg | `serial_number` | 653898989 | 0 | 86 |
 | card_013.jpg | `gender` | مرد | — | 0 |
 | card_024.jpg | `birth_date` | 1377/07/12 | 1308/02/08 | 0 |
+| card_027.jpg | `national_code` | 2905567791 | — | 0 |
+| card_027.jpg | `last_name` | محمدی | — | 0 |
+| card_027.jpg | `first_name` | ترانه | — | 0 |
+| card_027.jpg | `father_name` | ابراهیم | — | 0 |
+| card_027.jpg | `birth_date` | 1382/11/13 | — | 0 |
+| card_027.jpg | `serial_number` | 91738277 | — | 0 |
+| card_027.jpg | `gender` | زن | — | 0 |
 | card_028.jpg | `national_code` | 1034052314 | 1034 | 93 |
 | card_028.jpg | `father_name` | حسین | تاریخ تولد | 73 |
 | card_028.jpg | `birth_date` | 1352/10/27 | 1301/01/31 | 56 |
-| card_028.jpg | `serial_number` | 92319173 | 0 | 86 |
-| card_028.jpg | `gender` | مرد | — | 0 |

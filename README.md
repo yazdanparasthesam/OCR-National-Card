@@ -71,14 +71,14 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
-| `national_code` | **100.0 %** | 100.0 % | 83.3 % | 89.7 % |
-| `last_name` | **100.0 %** | 100.0 % | 90.0 % | 92.6 % |
-| `first_name` | 93.3 % | 98.3 % | 93.3 % | 94.2 % |
-| `father_name` | 93.3 % | 98.6 % | 93.3 % | 96.2 % |
-| `birth_date` | 83.3 % | 97.3 % | 66.7 % | 86.7 % |
-| `serial_number` | 96.7 % | 99.0 % | 76.7 % | 84.5 % |
-| `gender` | **100.0 %** | 100.0 % | 80.0 % | 80.0 % |
-| **overall** | **95.2 %** | **99.1 %** | **83.3 %** | **89.1 %** |
+| `national_code` | **100.0 %** | 100.0 % | 80.0 % | 86.3 % |
+| `last_name` | **100.0 %** | 100.0 % | 86.7 % | 89.3 % |
+| `first_name` | 93.3 % | 98.3 % | 90.0 % | 90.8 % |
+| `father_name` | 93.3 % | 98.6 % | 90.0 % | 92.9 % |
+| `birth_date` | 83.3 % | 97.3 % | 63.3 % | 83.3 % |
+| `serial_number` | 96.7 % | 99.0 % | 73.3 % | 81.1 % |
+| `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
+| **overall** | **95.2 %** | **99.1 %** | **80.0 %** | **85.8 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -91,7 +91,7 @@ How to read it:
 * **national code and gender are effectively exact**: the mod-11 checksum and the
   two-word vocabulary make them self-correcting.
 * **photographed cards are harder** (down to 0.62× resolution, blur σ≈0.9, JPEG 45–70
-  and glare in the benchmark): 83 % of cards come out perfect, 89 % of characters
+  and glare in the benchmark): 80 % of cards come out perfect, 86 % of characters
   right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
 * Latency: **1.3–2.6 s per card** on CPU (single Tesseract binary, 8–14 subprocess
@@ -107,8 +107,8 @@ slice of 150 cards the gap is honest:
 
 | | clean renders | photo renders | 150 held-out real photos |
 |---|---|---|---|
-| field exact match | 95.2 % | 83.3 % | **7.8 %** |
-| field character accuracy | 99.1 % | 89.1 % | **19.9 %** |
+| field exact match | 95.2 % | 80.0 % | **19.2 %** |
+| field character accuracy | 99.1 % | 85.8 % | **33.9 %** |
 
 Real cards are a different problem: on many of these photos the card is *not* isolated
 by the warp — the warped canvas still holds the hand and the table, so the card fills
@@ -146,7 +146,7 @@ The Streamlit app shows accuracy in two honest flavours:
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
 Nothing is inflated: the measured panel reports 95.2 % / 99.1 % on clean renders and
-83.3 % / 89.1 % on photo-style cards — the numbers in the table above.
+80.0 % / 85.8 % on photo-style cards — the numbers in the table above.
 
 ### Rotated and mirrored photos
 

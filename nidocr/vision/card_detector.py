@@ -245,6 +245,69 @@ def _rescue_quad(image: np.ndarray, frame_area: float, settings: Settings) -> np
     return candidate if _content_score(canvas) >= 0.55 else None
 
 
+#: HSV bands of the printed card itself.  An Iranian national card is a pale cyan-blue
+#: sheet with a pink band; a hand, a wooden desk, a bottle of water and a bin are all
+#: outside these bands or much darker, which is what makes the card separable by colour
+#: on photos where its own border is too faint for an edge contour.
+CARD_COLOUR_BANDS = (
+    (85, 118, 12, 135, 120),  # cyan-blue body: hue, hue, min S, max S, min V
+    (138, 178, 18, 145, 140),  # the pink band
+)
+CARD_PALE_MIN_V = 165
+CARD_PALE_MAX_S = 28
+#: A warped canvas is accepted as "the card" when this much of its border ring is card.
+CARD_BORDER_FILL = 0.80
+BORDER_PROBE = (240, 151)
+
+
+def _card_colour_mask(image: np.ndarray) -> np.ndarray:
+    """Binary mask of the pale cyan/pink sheet, cleaned into one solid blob."""
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    hue, saturation, value = hsv[:, :, 0], hsv[:, :, 1].astype(int), hsv[:, :, 2].astype(int)
+    mask = ((saturation < CARD_PALE_MAX_S) & (value >= CARD_PALE_MIN_V)).astype(np.uint8)
+    for low, high, min_s, max_s, min_v in CARD_COLOUR_BANDS:
+        band = (hue >= low) & (hue <= high) & (saturation >= min_s) & (saturation <= max_s) & (value >= min_v)
+        mask |= band.astype(np.uint8)
+    mask *= 255
+    kernel = max(9, image.shape[1] // 45) | 1
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((kernel, kernel), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((11, 11), np.uint8))
+    return mask
+
+
+def _largest_blob_quad(mask: np.ndarray) -> np.ndarray | None:
+    """Quadrilateral of the biggest connected blob in the mask."""
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+    if count < 2:
+        return None
+    biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    blob = (labels == biggest).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None
+    hull = cv2.convexHull(max(contours, key=cv2.contourArea))
+    perimeter = cv2.arcLength(hull, True)
+    approx = cv2.approxPolyDP(hull, 0.02 * perimeter, True)
+    if len(approx) == 4:
+        return approx.reshape(4, 2).astype(np.float32)
+    return cv2.boxPoints(cv2.minAreaRect(hull)).astype(np.float32)
+
+
+def _border_fill(mask: np.ndarray, quad: np.ndarray) -> float:
+    """Share of a hypothesis' border ring that is card: 1.0 means the card fills it.
+
+    The warp of the *mask* answers the question directly — if the ring around a warped
+    canvas is still mask, the quad is on the card; background bleeding into the ring is
+    exactly what a wrong quad looks like.
+    """
+    warped = warp_card(mask, quad, size=BORDER_PROBE)
+    height, width = warped.shape[:2]
+    ring = max(2, height // 22)
+    inside = float((warped > 127).mean())
+    centre = float((warped[ring : height - ring, ring : width - ring] > 127).mean())
+    return min(inside, max(centre, 0.0))
+
+
 def detect_card(image: np.ndarray, settings: Settings | None = None) -> CardDetection:
     """Find the card quad. Never raises: falls back to the full frame."""
     settings = settings or get_settings()
@@ -268,6 +331,46 @@ def detect_card(image: np.ndarray, settings: Settings | None = None) -> CardDete
             score *= 0.55
         if score > best_score:
             best_quad, best_score = quad, score
+
+    # Colour is the second, independent hypothesis.  On the real photos the edge
+    # contour very often latches onto a bottle, a hand or a shadow: the card's own
+    # border is faint while its pale cyan sheet is unmistakable.  A colour quad is used
+    # when the card fills the canvas it produces — the one thing an edge quad cannot
+    # claim when it has drifted off the card.
+    mask = _card_colour_mask(working)
+    colour_quad = _largest_blob_quad(mask)
+    colour_fill = 0.0
+    if colour_quad is not None:
+        colour_aspect, colour_area, colour_rect = _quad_metrics(colour_quad, frame_area)
+        if 1.2 <= colour_aspect <= 2.1 and colour_area >= 0.06 and colour_rect >= 0.6:
+            colour_fill = _border_fill(mask, colour_quad)
+        else:
+            colour_quad = None
+    geometry_fill = _border_fill(mask, best_quad) if best_quad is not None else 0.0
+    geometry_area = _quad_metrics(best_quad, frame_area)[1] if best_quad is not None else 0.0
+    # only a *convincing* geometric quad that already covers the picture blocks the
+    # colour hypothesis — a low-scoring one keeps the frame anyway, and colour is
+    # strictly better than the frame
+    geometry_covers = best_score >= 0.42 and geometry_area >= 0.90
+
+    if (
+        colour_quad is not None
+        and not geometry_covers
+        and colour_fill >= CARD_BORDER_FILL
+        and colour_fill > geometry_fill + 0.02
+    ):
+        quad = colour_quad * scale
+        aspect, area_ratio, _ = _quad_metrics(quad, float(width * height))
+        return CardDetection(
+            quad=quad.astype(np.float32),
+            score=round(colour_fill, 4),
+            method="colour",
+            aspect=aspect,
+            area_ratio=area_ratio,
+            found=True,
+            image_size=(width, height),
+            notes=[],
+        )
 
     if best_quad is None:
         return CardDetection(

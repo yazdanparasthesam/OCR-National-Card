@@ -126,6 +126,26 @@ class PreparedCard:
     prep_ms: float = 0.0
     rotation: int = 0
     osd_confidence: float = 0.0
+    #: Vertical affine ``y → a*y + b`` that maps the template's row grid onto the rows
+    #: printed on this card (``(1.0, 0.0)`` when the template already fits).
+    row_fit: tuple[float, float] = (1.0, 0.0)
+
+    def value_rect(self, key: str) -> Rect | None:
+        """Value box of one field, moved onto the rows this card actually printed."""
+        width, height = self.canvas
+        rect = self.layout.value_rect(key, width, height)
+        if rect is None:
+            return None
+        scale, offset = self.row_fit
+        if scale == 1.0 and offset == 0.0:
+            return rect
+        x0, y0, x1, y1 = rect
+        return (
+            x0,
+            max(0, min(height - 1, int(round(scale * y0 + offset)))),
+            x1,
+            max(0, min(height, int(round(scale * y1 + offset)))),
+        )
     scale: float = 1.0
     upscale_boost: float = 1.0
 
@@ -262,6 +282,9 @@ class NationalCardOCR:
             if auto
             else self._resolve_layout(requested)
         )
+        row_fit = self._fit_rows(
+            variants["binary"], layout, (variants["gray"].shape[1], variants["gray"].shape[0])
+        )
         gray_for_ocr = variants["enhanced"]
 
         gray = variants["gray"]
@@ -292,6 +315,7 @@ class NationalCardOCR:
             rotation=rotation,
             osd_confidence=osd_confidence,
             scale=scale,
+            row_fit=row_fit,
         )
         if rotation:
             prepared.quality.warnings.append(f"تصویر {rotation} درجه چرخانده شد تا متن افقی شود")
@@ -808,6 +832,70 @@ class NationalCardOCR:
         return detection.method in {"contour", "mask"} and detection.area_ratio < FULL_FRAME_AREA
 
     @staticmethod
+    def _fit_rows(binary: np.ndarray, layout, canvas: tuple[int, int]) -> tuple[float, float]:
+        """Map the template's row grid onto the rows printed on *this* card.
+
+        The template is a proportion of the design, but a photographed card leaves the
+        warp a few percent larger or smaller, so a box can sit half a row off and read
+        its neighbour («نام» reading the national code, a birth date reading «نام پدر»).
+        The correction is measured: the ink profile of the value column is smoothed, its
+        six strongest maxima become candidate rows, and the window whose gaps match the
+        template's pitch is fitted with a straight line; the line is accepted only when
+        every row lands within 9 px of a peak and the correction is not trivial.
+        """
+        width, height = canvas
+        rects = [layout.value_rect(key, width, height) for key in layout.keys()]  # noqa: SIM118
+        rects = [rect for rect in rects if rect]
+        if len(rects) < 4:
+            return (1.0, 0.0)
+        left = max(0, min(rect[0] for rect in rects))
+        right = min(width, max(rect[2] for rect in rects))
+        if right - left < 20:
+            return (1.0, 0.0)
+        profile = (binary[:, left:right] < 128).mean(axis=1)
+        if profile.max() <= 0:
+            return (1.0, 0.0)
+        centres = np.array(sorted((rect[1] + rect[3]) / 2.0 for rect in rects), dtype=float)
+        pitch = float(np.median(np.diff(centres))) if len(centres) > 1 else 60.0
+        if pitch <= 4:
+            return (1.0, 0.0)
+        sigma = 6.0
+        kernel = max(5, int(sigma * 4) | 1)
+        window = np.exp(-0.5 * ((np.arange(kernel) - kernel // 2) / sigma) ** 2)
+        smooth = np.convolve(profile, window / window.sum(), mode="same")
+        candidates = [
+            y
+            for y in range(2, height - 2)
+            if smooth[y] >= smooth[y - 1] and smooth[y] > smooth[y + 1] and smooth[y] > 0.15 * smooth.max()
+        ]
+        peaks: list[int] = []
+        for y in sorted(candidates, key=lambda index: -smooth[index]):
+            if all(abs(y - peak) > 0.45 * pitch for peak in peaks):
+                peaks.append(y)
+            if len(peaks) >= 12:
+                break
+        if len(peaks) < 4:
+            return (1.0, 0.0)
+        peaks_sorted = np.array(sorted(peaks), dtype=float)
+        best: tuple[float, float, float] | None = None
+        for start in range(len(peaks_sorted) - len(centres) + 1):
+            window_peaks = peaks_sorted[start : start + len(centres)]
+            if len(window_peaks) != len(centres):
+                continue
+            scale, offset = np.polyfit(centres, window_peaks, 1)
+            if not 0.92 <= scale <= 1.08 or abs(offset) > 0.08 * height:
+                continue
+            residual = float(np.max(np.abs(scale * centres + offset - window_peaks)))
+            if residual <= 9.0 and (best is None or residual < best[0]):
+                best = (residual, float(scale), float(offset))
+        if best is None:
+            return (1.0, 0.0)
+        _, scale, offset = best
+        if abs(scale - 1.0) < 0.02 and abs(offset) < 4.0:
+            return (1.0, 0.0)
+        return (round(scale, 3), round(offset, 1))
+
+    @staticmethod
     def _clipped_row(binary: np.ndarray, rect: Rect, edge: str) -> bool:
         """True when the box cuts through ink at its top or bottom edge."""
         x0, y0, x1, y1 = rect
@@ -946,7 +1034,7 @@ class NationalCardOCR:
         width, height = prepared.canvas
         options: list[tuple[Rect, str]] = []
         anchor = prepared.anchors.get(spec.key)
-        template_rect = prepared.layout.value_rect(spec.key, width, height)
+        template_rect = prepared.value_rect(spec.key)
         if anchor is not None and template_rect is not None and not self._anchor_plausible(anchor[0], template_rect):
             anchor = None
         if anchor is not None:

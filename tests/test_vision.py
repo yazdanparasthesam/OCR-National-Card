@@ -46,7 +46,9 @@ def test_detects_the_card_inside_a_desk_photo():
     image = _card_on_desk()
     detection = detect_card(image)
     assert detection.found
-    assert detection.method == "contour"
+    # either hypothesis may win — the contour is the right one on an edged photo, the
+    # colour mask on a flat card — but the card must be what was found, never the frame
+    assert detection.method in {"contour", "colour"}
     assert 1.3 < detection.aspect < 1.9
 
 
