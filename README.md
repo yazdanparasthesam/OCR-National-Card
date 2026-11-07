@@ -99,22 +99,26 @@ How to read it:
 
 ### Real cards, not renders
 
-The synthetic benchmark is a *proxy*. The same numbers are measured on a private set of
-**87 labelled phone photos** (4000 × 1800, the card held in a hand, every shot taken in
-daylight) with `scripts/csv_to_dataset.py` + `scripts/benchmark.py --dataset`, and the
-gap is honest:
+The synthetic benchmark is a *proxy*. The same numbers are measured on the public Kaggle
+set [`kibordevents/iranian-national-id-card-dataset`](https://www.kaggle.com/datasets/kibordevents/iranian-national-id-card-dataset)
+— **2000 labelled phone photos** (4000 × 1800, the card held in a hand, shot in daylight)
+— with `scripts/csv_to_dataset.py` + `scripts/benchmark.py --dataset`. On a held-out
+slice of 150 cards the gap is honest:
 
-| | clean renders | photo renders | 87 real photos |
+| | clean renders | photo renders | 150 held-out real photos |
 |---|---|---|---|
-| field exact match | 93.3 % | 83.3 % | **5.4 %** |
-| field character accuracy | 97.6 % | 89.1 % | **15.4 %** |
+| field exact match | 93.3 % | 83.3 % | **7.7 %** |
+| field character accuracy | 97.6 % | 89.1 % | **19.1 %** |
 
-Real cards are a different problem: the card is warped up to ±15 % larger than the
-design, so the template's row grid no longer sits on the printed rows and a box can
-read the row above or below it (a national code read as «010» is «نام» from the row
-above). [`reports/real_cards.md`](reports/real_cards.md) records the measurement and
-what is left; the labelled photos themselves are personal data and are **not** in this
-repository (`data/` is ignored).
+Real cards are a different problem: on many of these photos the card is *not* isolated
+by the warp — the warped canvas still holds the hand and the table, so the card fills
+part of the frame and every template coordinate is meaningless (median 23 % of the
+canvas border is background on a 24-card sample). Where the quad is right, the card is
+warped a little larger than the design and a box reads its neighbour row (a national
+code coming back as «010» is «نام» from the row above).
+[`reports/real_cards.md`](reports/real_cards.md) records the measurement, the failure
+breakdown and what is left to do. 200 of the photos and their labels are kept in the
+git-ignored `data/real/` — they are personal data and are **not** in this repository.
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
 Persian `message`, so an application can decide to auto-accept or ask a human.
