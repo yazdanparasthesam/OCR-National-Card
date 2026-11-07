@@ -83,6 +83,10 @@ on different cards, so the tie-break has to be confidence, not a fixed scale."""
 FALLBACK_TEMPLATE = "national_card_front"
 """Template used when neither the requested name nor the configured default exists."""
 
+NUMBER_LEFT_EXTEND = 0.15
+"""How far a numeric ROI may grow to the left: a ten-digit row is wider than any name,
+so a box that starts inside it drops the leading digits («5116168397» → «168397»)."""
+
 NAME_LEFT_EXTEND = 0.09
 """How far a name ROI may grow to the left (fraction of the canvas width) before snapping."""
 
@@ -777,6 +781,48 @@ class NationalCardOCR:
         return best_name
 
     @staticmethod
+    def _clipped_row(binary: np.ndarray, rect: Rect, edge: str) -> bool:
+        """True when the box cuts through ink at its top or bottom edge."""
+        x0, y0, x1, y1 = rect
+        x0, x1 = max(0, x0), min(binary.shape[1], x1)
+        if x1 - x0 < 4:
+            return False
+        band = (
+            binary[max(0, y0) : y0 + 2, x0:x1]
+            if edge == "top"
+            else binary[max(0, y1 - 2) : y1, x0:x1]
+        )
+        # a cut row loses a good part of its glyphs; a speckled background only a pixel
+        # or two, so the test needs a real share of the strip
+        return int((band < 128).sum()) >= max(10.0, 0.03 * band.size)
+
+    def _grow_rows(self, binary: np.ndarray, rect: Rect, height: int) -> Rect:
+        """Grow a box up/down while it is still cutting through glyphs.
+
+        The template rows are right on a rendered card, but a photographed one warps a
+        little larger, so the printed rows sit lower and every box slices its own text:
+        «خرازی» read as «از», the birth date as «۱۳۶۴/۰۹».  Growth is gated on the cuts
+        themselves — a box with clear space above and below never moves, so a card that
+        is already aligned is untouched.
+        """
+        x0, y0, x1, y1 = rect
+        limit = int(0.03 * height)
+        step = 2
+        minimum = 8
+        top_limit = max(0, y0 - limit)
+        while y0 - step >= top_limit and self._strip_ink(binary, x0, y0 - step, x1, y0) >= minimum:
+            y0 -= step
+        bottom_limit = min(binary.shape[0], y1 + limit)
+        while y1 + step <= bottom_limit and self._strip_ink(binary, x0, y1, x1, y1 + step) >= minimum:
+            y1 += step
+        return (x0, y0, x1, y1)
+
+    def _strip_ink(self, binary: np.ndarray, x0: int, y0: int, x1: int, y1: int) -> int:
+        """Ink pixels in a thin strip, used to follow a row past the box edge."""
+        band = binary[max(0, y0) : max(0, y1), max(0, x0) : max(0, x1)]
+        return int((band < 128).sum())
+
+    @staticmethod
     def _clipped_left(binary: np.ndarray, rect: Rect) -> bool:
         """True when the value runs into the left edge of its box (it is being cut)."""
         x0, y0, x1, y1 = rect
@@ -896,13 +942,18 @@ class NationalCardOCR:
         # two-word Persian name onto a single letter and the field reads empty
         allow_columns = spec.kind in GLYPH_KINDS
         for rect, source_name in options:
-            if spec.kind == "text" and self._clipped_left(prepared.binary, rect):
-                # a name is right-aligned but grows *leftwards*, and a long one runs past
-                # the template box: «کمالی پور فهدان» lost its «ن» at x = 824 while the
-                # rest of the row stayed empty up to the photo.  Widening the box before
-                # the ink is snapped costs nothing (the snap re-tightens it) and the
-                # label is on the right, so the space to the left is only ever the value.
-                rect = (max(0, rect[0] - int(NAME_LEFT_EXTEND * width)), rect[1], rect[2], rect[3])
+            if self._clipped_left(prepared.binary, rect):
+                # a value is right-aligned and grows *leftwards*, so a box that starts
+                # inside one cuts it: «کمالی پور فهدان» lost its «ن», a ten-digit row
+                # read as «168397», «مصطفوی» as «از».  The label sits to the right, so
+                # the space to the left is only ever the value; widening costs nothing
+                # because the ink is snapped again inside the wider box.
+                extend = NAME_LEFT_EXTEND if spec.kind == "text" else NUMBER_LEFT_EXTEND
+                rect = (max(0, rect[0] - int(extend * width)), rect[1], rect[2], rect[3])
+            if self._clipped_row(prepared.binary, rect, "top") or self._clipped_row(
+                prepared.binary, rect, "bottom"
+            ):
+                rect = self._grow_rows(prepared.binary, rect, height)
             refined = self._refine(prepared.binary, rect, allow_columns=allow_columns)
             if rect_ink(prepared.binary, refined) < 0.003:
                 continue

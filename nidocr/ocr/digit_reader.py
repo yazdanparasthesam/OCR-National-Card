@@ -204,7 +204,7 @@ def is_separator_glyph(patch: np.ndarray) -> bool:
     return drift > 0.45
 
 
-def _keep_main_cluster(boxes: list[Rect], max_gap_ratio: float = 0.85) -> list[Rect]:
+def _keep_main_cluster(boxes: list[Rect], max_gap_ratio: float = 1.6) -> list[Rect]:
     """Drop boxes that are isolated from the digit run (background specks).
 
     Digits of one number are evenly spaced; a speck separated by a gap wider than a

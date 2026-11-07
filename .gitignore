@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local labelled card photos and derived crops (personal data, never committed)
+data/

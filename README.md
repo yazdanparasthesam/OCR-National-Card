@@ -71,14 +71,14 @@ Tesseract 5.4.1 (`fas.traineddata`, `tessdata_fast`) on a 4-core CPU:
 
 | field | clean (exact) | clean (chars) | photo (exact) | photo (chars) |
 |---|---|---|---|---|
-| `national_code` | **100.0 %** | 100.0 % | 90.0 % | 94.7 % |
-| `last_name` | **100.0 %** | 100.0 % | 80.0 % | 82.6 % |
-| `first_name` | 93.3 % | 98.3 % | 86.7 % | 89.2 % |
-| `father_name` | 93.3 % | 98.6 % | 86.7 % | 86.7 % |
-| `birth_date` | 83.3 % | 97.3 % | 73.3 % | 88.0 % |
-| `serial_number` | 96.7 % | 99.0 % | 73.3 % | 78.7 % |
-| `gender` | **100.0 %** | 100.0 % | 76.7 % | 76.7 % |
-| **overall** | **95.2 %** | **99.1 %** | **81.0 %** | **85.2 %** |
+| `national_code` | **100.0 %** | 100.0 % | 83.3 % | 89.7 % |
+| `last_name` | 96.7 % | 97.3 % | 90.0 % | 92.6 % |
+| `first_name` | 90.0 % | 95.0 % | 93.3 % | 94.2 % |
+| `father_name` | 90.0 % | 95.3 % | 93.3 % | 96.2 % |
+| `birth_date` | 80.0 % | 96.7 % | 66.7 % | 86.7 % |
+| `serial_number` | 96.7 % | 99.0 % | 76.7 % | 84.5 % |
+| `gender` | **100.0 %** | 100.0 % | 80.0 % | 80.0 % |
+| **overall** | **93.3 %** | **97.6 %** | **83.3 %** | **89.1 %** |
 
 Full reports: [`reports/benchmark_clean.md`](reports/benchmark_clean.md),
 [`reports/benchmark_photo.md`](reports/benchmark_photo.md),
@@ -86,16 +86,35 @@ digit-classifier report [`reports/digits.md`](reports/digits.md).
 
 How to read it:
 
-* **character accuracy ≥ 97.8 % on flat scans**, i.e. ≤ 2 characters wrong per card —
+* **character accuracy ≈ 98 % on flat scans**, i.e. ≤ 2 characters wrong per card —
   the values are safe to *review*, and the validator flags what it doubts.
 * **national code and gender are effectively exact**: the mod-11 checksum and the
   two-word vocabulary make them self-correcting.
 * **photographed cards are harder** (down to 0.62× resolution, blur σ≈0.9, JPEG 45–70
-  and glare in the benchmark): 81 % of cards come out perfect, 85 % of characters
+  and glare in the benchmark): 83 % of cards come out perfect, 89 % of characters
   right — and they survive a *sideways or upside-down* photo, which used to score 0. Low-res dates and serials are where it hurts — see
   [roadmap](#limitations--roadmap).
 * Latency: **1.3–2.6 s per card** on CPU (single Tesseract binary, 8–14 subprocess
   calls per card; the UI and API reuse a warm process-wide pipeline).
+
+### Real cards, not renders
+
+The synthetic benchmark is a *proxy*. The same numbers are measured on a private set of
+**87 labelled phone photos** (4000 × 1800, the card held in a hand, every shot taken in
+daylight) with `scripts/csv_to_dataset.py` + `scripts/benchmark.py --dataset`, and the
+gap is honest:
+
+| | clean renders | photo renders | 87 real photos |
+|---|---|---|---|
+| field exact match | 93.3 % | 83.3 % | **5.4 %** |
+| field character accuracy | 97.6 % | 89.1 % | **15.4 %** |
+
+Real cards are a different problem: the card is warped up to ±15 % larger than the
+design, so the template's row grid no longer sits on the printed rows and a box can
+read the row above or below it (a national code read as «010» is «نام» from the row
+above). [`reports/real_cards.md`](reports/real_cards.md) records the measurement and
+what is left; the labelled photos themselves are personal data and are **not** in this
+repository (`data/` is ignored).
 
 Every value is returned with `confidence` (0–100), `validated`, `repaired` and a
 Persian `message`, so an application can decide to auto-accept or ask a human.
@@ -122,8 +141,8 @@ The Streamlit app shows accuracy in two honest flavours:
 | **تخمینی** (estimated) | «🎯 دقت این کارت» tab of every card | per-field and overall estimate with **no ground truth needed**: the prior is the committed benchmark rate of that field, adjusted by the card's own confidence, validator result and repair flag — always labelled «تخمینی» |
 | **اندازه‌گیری این کارت** | same tab, form | type/confirm the true values (pre-filled with what was read) and get the exact per-field ticks plus the card's exact-match and character accuracy |
 
-Nothing is inflated: the measured panel reports 94.8 % / 98.8 % on clean renders and
-80.0 % / 84.9 % on photo-style cards — the numbers in the table above.
+Nothing is inflated: the measured panel reports 93.3 % / 97.6 % on clean renders and
+83.3 % / 89.1 % on photo-style cards — the numbers in the table above.
 
 ### Rotated and mirrored photos
 
@@ -175,11 +194,18 @@ row off: «نام» then reads the national code and «نام خانوادگی»
 The score is now the *fraction* of pixels below the card's own ink level, which is
 exposure independent: a portrait covers 15–47 % of its box, a column of text 2–9 %
 (measured on three real photos against twelve benchmark renders, which it separates
-2–8× apart). Two smaller fixes came with it: a name ROI may grow 9 % of the canvas to
+2–8× apart). Three smaller fixes came with it: a name ROI may grow 9 % of the canvas to
 the left when its first column still carries ink (a long «کمالی پور فهدان» was cut at
-its «ن», while «نام پدر» sits to the right, so nothing else can be pulled in), and the
-eyes that measured the row are the same ones that read it — a washed-out, sideways
-photo of a smart card went from *nothing* to national code, father name and birth date.
+its «ن», while «نام پدر» sits to the right, so nothing else can be pulled in), a numeric
+ROI grows 15 % the same way (a ten-digit national code was read as «168397» when its box
+started inside the row), and a box that is still *cutting through glyphs* at its top or
+bottom edge grows up to 3 % of the canvas until the glyphs end — measured on the edges
+themselves, so a box with clear space around it never moves. On the 87 real photos that
+last one is worth more than everything else in this section: 1.9 % → 5.4 % of cards
+completely right, and on the photo-style renders 81 % → 83 % of cards and 85.2 % → 89.1 %
+of characters. The eyes that measured the row are the same ones that read it — a
+washed-out, sideways photo of a smart card went from *nothing* to national code, father
+name and birth date.
 
 ### Upload the card, not a screenshot of the result
 

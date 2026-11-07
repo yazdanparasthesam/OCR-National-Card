@@ -135,6 +135,7 @@ def convert(
     *,
     copy: bool = False,
     keep_spaces: bool = True,
+    template: str = "auto",
 ) -> tuple[int, list[str]]:
     """Write one ground-truth JSON per labelled row; return ``(written, skipped)``."""
     out.mkdir(parents=True, exist_ok=True)
@@ -169,7 +170,16 @@ def convert(
                     shutil.copyfile(image, target)
                 else:
                     target.symlink_to(image.resolve())
-            payload = {"image": image.name, "fields": fields, "difficulty": "custom"}
+            # ``template`` is part of the payload contract: without it the benchmark
+            # falls back to ``Settings.default_template``, which is the old front design
+            # — and every smart card is then read one row off.  A real folder mixes
+            # designs, so "auto" is the only honest default.
+            payload = {
+                "image": image.name,
+                "fields": fields,
+                "difficulty": "custom",
+                "template": template,
+            }
             (out / f"{image.stem}.json").write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
             )
@@ -185,6 +195,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True, type=Path, help="dataset folder to write")
     parser.add_argument("--copy", action="store_true", help="copy the images instead of linking them")
     parser.add_argument(
+        "--template",
+        default="auto",
+        help="template the measurement should use for every card (default: auto-detect)",
+    )
+    parser.add_argument(
         "--strip-spaces",
         action="store_true",
         help="remove spaces inside labels (some CSVs write «محمد جواد» where the card has «محمدمهدی»)",
@@ -192,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     written, skipped = convert(args.csv, args.images, args.out, copy=args.copy,
-                               keep_spaces=not args.strip_spaces)
+                               keep_spaces=not args.strip_spaces, template=args.template)
     print(f"{written} record(s) → {args.out}")
     if skipped:
         preview = ", ".join(skipped[:8])
