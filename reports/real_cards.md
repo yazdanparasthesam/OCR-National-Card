@@ -225,11 +225,16 @@ This one condition improved *every* set, including the synthetic photos:
 
 | | before | after |
 |---|---|---|
-| 150 held-out real photos, exact | 23.67 % | **23.89 %** |
-| ... characters | 36.13 % | **36.55 %** |
+| 150 held-out real photos, exact | 23.67 % | **24.11 %** |
+| ... characters | 36.13 % | **36.67 %** |
 | photo renders | 80.48 % / 85.92 % | **83.81 % / 89.25 %** |
 | clean renders | 95.24 % / 99.05 % | 95.24 % / 99.05 % |
-| latency | 2938 ms/card | 2834 ms/card |
+| latency | 2938 ms/card | 2797 ms/card |
+
+The colour quad's own sanity window was widened from `1.2 ≤ aspect ≤ 2.1` to
+`1.0 ≤ aspect ≤ 2.4` in the same pass: a card held at 30° gives a squarish blob quad
+(1.09 on card 700), and rejecting it left the worse geometric quad in place.  The guards
+that matter for the renders are `geometry_is_card` above, not this window.
 
 (`expiry_date` 29.3 → 31.3 %, `father_name` 32.8 → 34.5 % characters; the photo renders
 are now *above* the pre-colour detector's 83.33 % / 89.11 %.)

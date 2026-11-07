@@ -345,7 +345,7 @@ def detect_card(image: np.ndarray, settings: Settings | None = None) -> CardDete
     colour_fill = 0.0
     if colour_quad is not None:
         colour_aspect, colour_area, colour_rect = _quad_metrics(colour_quad, frame_area)
-        if 1.2 <= colour_aspect <= 2.1 and colour_area >= 0.06 and colour_rect >= 0.6:
+        if 1.0 <= colour_aspect <= 2.4 and colour_area >= 0.06 and colour_rect >= 0.6:
             colour_fill = _border_fill(mask, colour_quad)
         else:
             colour_quad = None
