@@ -20,7 +20,7 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       FOLDER: "https://drive.google.com/drive/folders/1gdNQDdVemuUyA3SbGf8KivNwkPTgyOJk"
       LABELS: "17Xxt2-2f2UO_BiISBJwJTNVarxkIO6GP"
@@ -36,7 +36,7 @@ jobs:
           set +e
           {
             echo "== gdown --version"; gdown --version
-            echo "== folder download"; gdown --folder "$FOLDER" -O payload
+            echo "== folder download"; timeout 20m gdown --folder "$FOLDER" -O payload
             echo "== folder exit: $?"
             echo "== labels"; gdown "$LABELS" -O payload/labels.csv
             echo "== labels exit: $?"
