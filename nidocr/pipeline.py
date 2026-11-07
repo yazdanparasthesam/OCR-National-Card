@@ -226,6 +226,18 @@ class NationalCardOCR:
         # upside-down card still has rotated text inside the canvas, so ask OSD
         # (one cheap call) and turn the canvas upright first.
         color, rotation, osd_confidence = upright(color, self.engine)
+        if rotation in (90, 270):
+            # Turning the *canvas* by a quarter makes it portrait, and the template
+            # boxes are normalised to a landscape card, so every box lands somewhere
+            # else (measured on 9 of 150 real photos: 0 % of fields right).  The
+            # picture is turned instead and the whole detection is redone, which keeps
+            # the canonical canvas and the card's own aspect.
+            turned = rotate(image, rotation)
+            detection = detect_card(turned, self.settings)
+            color = warp_card(turned, detection.quad, canvas, self.settings)
+            if scale > 1.0:
+                color = upscale(color, scale)
+                color = unsharp(color, amount=0.6, radius=1.1)
         # a re-uploaded screenshot of the app's own annotated output has the field boxes
         # burnt into the pixels; they cross the very letters they point at, so they are
         # removed before any segmentation (a card photo is left untouched)

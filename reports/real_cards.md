@@ -77,3 +77,44 @@ Same pipeline on the synthetic sets: clean 93.33 % / 97.62 %, photo 83.33 % / 89
 * **Row growth on a scan or a render — rejected.** Growing a clipped ROI pulls the
   «نام پدر» label into the father-name value on a clean render (95.2 % → 93.3 % on the
   clean set). Growth is now limited to cards that were cut out of a larger picture.
+
+## Where the loss actually is (measured, 150 held-out cards)
+
+| group | cards | field accuracy |
+|---|---|---|
+| routed to `national_card_smart` | 37 of 60 sampled | 16.7 % |
+| routed to `national_card_front` | 23 of 60 sampled | **0.0 %** |
+| rotated 90/270 by OSD | 9 of 150 | **0.0 %** (0 of 54 fields) |
+
+The template is *not* the cause.  Sixteen of the front-routed cards were re-read with
+every template forced — `auto`, `national_card_smart`, `national_card_front` — and
+scored 0 of 96 fields in all three: their warped canvas does not contain the card
+upright, so no box placement can save them.  The same is true of the 16 cards whose
+quad was dumped by eye: the canvas holds the card at an angle, half out of frame, with
+hand and table around it.  **Card localisation is the bottleneck; the row grid, the
+template pick and the digit reader are all downstream of it.**
+
+## Training on the real crops (2026-11-07)
+
+`scripts/mine_real_digits.py` harvests labelled glyphs from real photos without OCR:
+for a national code / birth date / expiry date the *glyph count is known from the
+label*, so a field whose segmentation yields exactly that many non-separator glyphs can
+be labelled positionally; anything else is dropped, which keeps misaligned boxes out.
+
+* 1204 glyphs from 120 of the 1000 cards scanned (~10 % usable — the rest are
+  misaligned, see above), merged into the model at weight 5 (12 020 samples total).
+* Held-out 150: **7.78 % / 19.86 %** — i.e. unchanged (7.78 % / 19.91 %) — and the
+  clean renders unchanged at 95.24 % / 99.05 %.  The shipped model was therefore left
+  as the synthetic table; the mining script stays for when the geometry is fixed, at
+  which point the same run yields ~10× more usable crops.
+* Conclusion: the digit reader is rarely *reached* while the boxes sit on the wrong
+  rows, so training it cannot move the score yet.
+
+## The rotation bug found on the way
+
+`upright()` turns the canvas by 90/270 when OSD says so, which makes the canvas
+*portrait* while the template boxes are normalised to a landscape card — every box then
+lands somewhere else (that is the 0-of-54 group above).  The picture is now turned and
+the detection redone instead, which keeps the canonical canvas and the card's aspect.
+On the nine cards that hit this path the reading did not improve (their quads are junk
+either way), but the path no longer guarantees nonsense.
