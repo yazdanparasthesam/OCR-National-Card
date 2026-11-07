@@ -1,0 +1,87 @@
+name: kaggle-relay
+
+on:
+  push:
+    paths:
+      - .github/relay/trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download the dataset
+        run: |
+          python -m pip install --quiet --disable-pip-version-check kagglehub
+          python - <<'PY'
+          import pathlib, shutil, sys
+          import kagglehub
+          slug = "kibordevents/iranian-national-id-card-dataset"
+          try:
+              root = kagglehub.dataset_download(slug)
+          except Exception as exc:  # noqa: BLE001 - reported in the payload
+              print("download failed:", type(exc).__name__, exc)
+              sys.exit(1)
+          print("kagglehub path:", root)
+          src = pathlib.Path(root)
+          dst = pathlib.Path("payload")
+          dst.mkdir(exist_ok=True)
+          for path in src.rglob("*"):
+              if path.is_file():
+                  target = dst / path.relative_to(src)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(path, target)
+          print("copied", sum(1 for _ in dst.rglob('*') if _.is_file()), "files")
+          PY
+
+      - name: Describe what arrived
+        run: |
+          {
+            echo "== payload =="
+            du -sh payload || true
+            echo "== files: $(find payload -type f | wc -l)"
+            echo "== tree =="
+            find payload -maxdepth 3 | head -60
+            echo "== extensions =="
+            find payload -type f | sed 's/.*\.//' | sort | uniq -c | sort -rn | head -20
+            echo "== csv/json heads =="
+            for f in $(find payload -type f \( -name '*.csv' -o -name '*.json' -o -name '*.txt' \) | head -4); do
+              echo "--- $f"; head -5 "$f"; echo
+            done
+            echo "== image sample =="
+            find payload -type f \( -name '*.jpg' -o -name '*.png' -o -name '*.jpeg' \) | head -10
+          } > download.log 2>&1
+          cat download.log
+
+      - name: Pack
+        run: |
+          cd payload
+          zip -q -r ../dataset.zip . || true
+          cd ..
+          ls -l dataset.zip
+          size=$(stat -c%s dataset.zip)
+          if [ "$size" -gt 85000000 ]; then
+            split -b 80m -d dataset.zip part.zip.
+            ls -l part.zip.*
+          fi
+
+      - name: Push the payload to a throwaway branch
+        run: |
+          git config user.name "relay"
+          git config user.email "relay@users.noreply.github.com"
+          git checkout --orphan relay-kaggle-payload
+          git rm -rq --cached . >/dev/null 2>&1 || true
+          git add -f download.log dataset.zip
+          for f in part.zip.*; do [ -e "$f" ] && git add -f "$f"; done
+          git commit -qm "kaggle payload"
+          git push -f origin HEAD:relay/kaggle
