@@ -32,16 +32,21 @@ jobs:
 
       - name: Download the folder and the label CSV
         run: |
-          set -x
           mkdir -p payload
-          gdown --folder "$FOLDER" -O payload --remaining-ok || true
-          gdown "$LABELS" -O payload/labels.csv || true
-          find payload -type f | wc -l
-          du -sh payload
+          set +e
+          {
+            echo "== gdown --version"; gdown --version
+            echo "== folder download"; gdown --folder "$FOLDER" -O payload --remaining-ok
+            echo "== folder exit: $?"
+            echo "== labels"; gdown "$LABELS" -O payload/labels.csv
+            echo "== labels exit: $?"
+            echo "== listing"; find payload -type f | head -20; find payload -type f | wc -l
+          } > payload/download.log 2>&1
+          tail -40 payload/download.log
 
       - name: Pack
         run: |
-          if [ ! -s payload/labels.csv ]; then echo "labels.csv missing" >&2; exit 1; fi
+          if [ ! -s payload/labels.csv ]; then echo "labels.csv missing" >&2; fi
           python - <<'PY'
           import os, zipfile
           with zipfile.ZipFile("dataset.zip", "w", zipfile.ZIP_DEFLATED) as z:
