@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   relay:
@@ -80,12 +81,28 @@ jobs:
           echo "files to push:"; ls -l
 
       - name: Push the payload to a throwaway branch
+        continue-on-error: true
         run: |
+          set -x
           git config user.name "relay"
           git config user.email "relay@users.noreply.github.com"
           git checkout --orphan relay-kaggle-payload
           git rm -rq --cached . >/dev/null 2>&1 || true
-          git add -f download.log dataset.zip
-          for f in part.zip.*; do [ -e "$f" ] && git add -f "$f"; done
-          git commit -qm "kaggle payload"
-          git push -f origin HEAD:relay/kaggle
+          {
+            git add -f download.log
+            git add -f dataset.zip
+            for f in part.zip.*; do [ -e "$f" ] && git add -f "$f"; done
+            git commit -qm "kaggle payload"
+            git push -f origin HEAD:refs/heads/relay/kaggle
+          } > push.log 2>&1
+          cat push.log
+
+      - name: Report the log as an issue when the push failed
+        if: always()
+        run: |
+          [ -f push.log ] || echo "no push.log (the push step never ran)" > push.log
+          if ! git ls-remote --exit-code --heads origin relay/kaggle >/dev/null 2>&1; then
+            gh issue create --title "kaggle relay log" --body-file <(cat download.log push.log) || true
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
